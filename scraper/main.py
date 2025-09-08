@@ -47,8 +47,11 @@ class ProductInfo(BaseModel):
     source_url: str
     product_name: str
     color: str
-    price: str  # 원본 텍스트
-    reward_points: str  # 원본 텍스트
+    price: dict  # JSON: {"global": "", "kr": ""}
+    reward_points: dict  # JSON: {"global": "", "kr": ""}
+    description: dict  # JSON: {"global": "", "kr": ""}
+    material: dict  # JSON: {"global": "", "kr": ""}
+    size: dict  # JSON: {"global": "", "kr": ""}
     scraped_at: str
     indexed: bool
     image_count: int
@@ -181,14 +184,17 @@ async def get_products(
             ProductImage.product_id == product.id
         ).count()
         
-        # 새로운 컬럼 구조에서 데이터 추출
+        # 새로운 JSON 구조에서 데이터 추출
         result.append(ProductInfo(
             id=product.id,
             source_url=product.source_url,
             product_name=product.product_name or '',
             color=product.color or '',
-            price=product.price or '',  # 원본 텍스트 그대로
-            reward_points=product.reward_points or '',  # 원본 텍스트 그대로
+            price=product.price or {},  # JSON 형태
+            reward_points=product.reward_points or {},  # JSON 형태
+            description=product.description or {},  # JSON 형태
+            material=product.material or {},  # JSON 형태
+            size=product.size or {},  # JSON 형태
             scraped_at=product.scraped_at.isoformat(),
             indexed=product.indexed,
             image_count=image_count
@@ -252,7 +258,7 @@ async def run_scraping(job_id: int, target_url: str, max_products: Optional[int]
         
         # Run scraper
         scraper = ProductScraper(db)
-        products_count = await scraper.scrape_products(target_url, max_products)
+        products_count = await scraper.scrape_products_both_sites(max_products)
         
         # Update job completion
         job.status = "completed"

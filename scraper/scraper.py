@@ -18,7 +18,9 @@ class ProductScraper:
     def __init__(self, db: Session):
         self.db = db
         self.session = requests.Session()
-        self.base_url = "https://ucmeyewear.earth/category/all/87/"
+        # 영문/한글 사이트 URL
+        self.global_base_url = "https://ucmeyewear.earth/category/all/87/"
+        self.kr_base_url = "https://ucmeyewear.com/product/list.html?cate_no=87"
         
         # IP 차단 방지를 위한 User-Agent 로테이션
         self.user_agents = [
@@ -55,7 +57,26 @@ class ProductScraper:
         delay = random.uniform(self.min_delay, self.max_delay)
         time.sleep(delay)
     
-    async def scrape_products(self, target_url: str, max_products: int = None) -> int:
+    async def scrape_products_both_sites(self, max_products: int = None) -> int:
+        """영문과 한글 사이트를 순차적으로 스크래핑"""
+        total_scraped = 0
+        
+        # 1. 영문 사이트 스크래핑
+        print("=== 영문 사이트 스크래핑 시작 ===")
+        global_count = await self.scrape_products(self.global_base_url, max_products, "global")
+        total_scraped += global_count
+        print(f"영문 사이트 스크래핑 완료: {global_count}개")
+        
+        # 2. 한글 사이트 스크래핑
+        print("=== 한글 사이트 스크래핑 시작 ===") 
+        kr_count = await self.scrape_products(self.kr_base_url, max_products, "kr")
+        total_scraped += kr_count
+        print(f"한글 사이트 스크래핑 완료: {kr_count}개")
+        
+        print(f"전체 스크래핑 완료: {total_scraped}개")
+        return total_scraped
+    
+    async def scrape_products(self, target_url: str, max_products: int = None, site_type: str = "global") -> int:
         """모든 페이지에서 제품들을 스크래핑"""
         try:
             print(f"Starting to scrape from: {target_url}")
@@ -65,8 +86,11 @@ class ProductScraper:
             
             # 페이지네이션으로 모든 제품 링크 수집
             while True:
-                # 페이지 URL 구성
-                page_url = f"{target_url}?page={page_num}"
+                # 페이지 URL 구성 (사이트별로 다른 형태)
+                if site_type == "kr":
+                    page_url = f"{target_url}&page={page_num}"
+                else:
+                    page_url = f"{target_url}?page={page_num}"
                 print(f"Scraping page {page_num}: {page_url}")
                 
                 response = self.session.get(page_url, timeout=self.request_timeout)
@@ -88,13 +112,19 @@ class ProductScraper:
                     link = prd_img.find('a', href=True)
                     if link:
                         href = link['href']
-                        # 상대경로를 절대경로로 변환
+                        # 상대경로를 절대경로로 변환 (사이트별 도메인)
                         if href.startswith('/'):
-                            full_url = f"https://ucmeyewear.earth{href}"
+                            if site_type == "kr":
+                                full_url = f"https://ucmeyewear.com{href}"
+                            else:
+                                full_url = f"https://ucmeyewear.earth{href}"
                         elif href.startswith('http'):
                             full_url = href
                         else:
-                            full_url = f"https://ucmeyewear.earth/{href}"
+                            if site_type == "kr":
+                                full_url = f"https://ucmeyewear.com/{href}"
+                            else:
+                                full_url = f"https://ucmeyewear.earth/{href}"
                         
                         if full_url not in all_product_links:  # 중복 제거
                             page_links.append(full_url)
@@ -141,7 +171,7 @@ class ProductScraper:
                     if i % 5 == 0:
                         self._update_session_headers()
                     
-                    if self._scrape_single_product(link):
+                    if self._scrape_single_product(link, site_type):
                         scraped_count += 1
                         print(f"Successfully scraped product {i+1}")
                     else:
@@ -158,45 +188,43 @@ class ProductScraper:
             print(f"Failed to scrape products from {target_url}: {e}")
             return 0
     
-    def _scrape_single_product(self, product_url: str) -> bool:
+    def _scrape_single_product(self, product_url: str, site_type: str = "global") -> bool:
         """단일 제품 페이지 스크래핑"""
         try:
-            # 이미 스크래핑된 제품인지 확인
-            existing = self.db.query(Product).filter(Product.source_url == product_url).first()
-            if existing:
-                print(f"Product already exists: {product_url}")
-                return False
-                
             response = self.session.get(product_url, timeout=self.request_timeout)
             response.raise_for_status()
             
             soup = BeautifulSoup(response.text, 'html.parser')
             
             # 제품 정보 추출
-            product_data = self._extract_product_info(soup)
+            product_data = self._extract_product_info(soup, site_type)
             if not product_data:
                 print(f"Could not extract product data from: {product_url}")
                 return False
                 
-            # 제품 저장
-            product = Product(
-                source_url=product_url,
-                product_name=product_data.get("product_name", ""),
-                color=product_data.get("color", ""),
-                price=product_data.get("price", ""),  # 원본 텍스트 그대로 저장
-                reward_points=product_data.get("reward_points", ""),  # 원본 텍스트 그대로 저장
-                description=self._format_description(product_data.get("description", {})),
-                issoldout=product_data.get("isSoldout", False)
-            )
-            self.db.add(product)
-            self.db.commit()
-            self.db.refresh(product)
+            product_name = product_data.get("product_name", "")
+            color = product_data.get("color", "")
             
-            # 이미지 추출 및 저장
-            image_urls = self._extract_image_urls(soup)
-            if image_urls:
-                self._download_and_save_images(product.id, image_urls)
-                print(f"Saved {len(image_urls)} images for product {product.id}")
+            # 같은 product_name과 color를 가진 기존 제품 찾기
+            existing_product = self.db.query(Product).filter(
+                Product.product_name == product_name,
+                Product.color == color
+            ).first()
+            
+            if existing_product:
+                # 기존 제품 업데이트
+                print(f"Updating existing product: {product_name} - {color}")
+                self._update_existing_product(existing_product, product_data, site_type)
+            else:
+                # 새 제품 생성  
+                print(f"Creating new product: {product_name} - {color}")
+                product = self._create_new_product(product_url, product_data, site_type)
+                
+                # 이미지는 새 제품일 때만 다운로드
+                image_urls = self._extract_image_urls(soup, site_type)
+                if image_urls:
+                    self._download_and_save_images(product.id, image_urls)
+                    print(f"Saved {len(image_urls)} images for product {product.id}")
             
             return True
             
@@ -204,7 +232,7 @@ class ProductScraper:
             print(f"Error scraping product {product_url}: {e}")
             return False
     
-    def _extract_product_info(self, soup: BeautifulSoup) -> Optional[Dict[str, Any]]:
+    def _extract_product_info(self, soup: BeautifulSoup, site_type: str = "global") -> Optional[Dict[str, Any]]:
         """제품 정보 추출 (새로운 JSON 구조)"""
         try:
             # 새로운 JSON 구조 초기화
@@ -304,11 +332,12 @@ class ProductScraper:
                 # 3. SIZE 헤더 제거
                 desc_text = re.sub(r'SIZE\s*\n?', '', desc_text)
                 
-                # 4. Notice 이후 텍스트 제거 (저장하지 않음)
-                notice_match = re.search(r'※Notice.*', desc_text, re.DOTALL)
-                if notice_match:
-                    # Notice 이후 모든 텍스트 삭제
-                    desc_text = desc_text[:notice_match.start()]
+                # 4. Notice 이후 텍스트 제거 (영문 사이트에서만)
+                if site_type == "global":
+                    notice_match = re.search(r'※Notice.*', desc_text, re.DOTALL)
+                    if notice_match:
+                        # Notice 이후 모든 텍스트 삭제
+                        desc_text = desc_text[:notice_match.start()]
                 
                 # 5. DESCRIPTION 헤더 제거 및 정리
                 desc_text = re.sub(r'DESCRIPTION\s*\n?', '', desc_text)
@@ -335,7 +364,7 @@ class ProductScraper:
             print(f"Error extracting product info: {e}")
             return None
     
-    def _extract_image_urls(self, soup: BeautifulSoup) -> List[str]:
+    def _extract_image_urls(self, soup: BeautifulSoup, site_type: str = "global") -> List[str]:
         """제품 이미지 URL 추출"""
         try:
             # lxml 파서 준비
@@ -351,16 +380,22 @@ class ProductScraper:
             for img in image_elements:
                 src = img.get('src')
                 if src:
-                    # 상대경로를 절대경로로 변환
+                    # 상대경로를 절대경로로 변환 (사이트별 도메인)
                     if src.startswith('http'):
                         # 이미 완전한 URL인 경우 그대로 사용
                         full_url = src
                     elif src.startswith('/'):
                         # 절대 경로인 경우
-                        full_url = f"https://ucmeyewear.earth{src}"
+                        if site_type == "kr":
+                            full_url = f"https://ucmeyewear.com{src}"
+                        else:
+                            full_url = f"https://ucmeyewear.earth{src}"
                     else:
                         # 상대 경로인 경우
-                        full_url = f"https://ucmeyewear.earth/{src}"
+                        if site_type == "kr":
+                            full_url = f"https://ucmeyewear.com/{src}"
+                        else:
+                            full_url = f"https://ucmeyewear.earth/{src}"
                     image_urls.append(full_url)
             
             print(f"Found {len(image_urls)} product images")
@@ -435,5 +470,79 @@ class ProductScraper:
                 parts.append("Size - " + ", ".join(size_parts))
             
             return " | ".join(parts)
+        except:
+            return ""
+    
+    def _create_new_product(self, product_url: str, product_data: Dict[str, Any], site_type: str) -> Product:
+        """새 제품 생성"""
+        # JSON 필드 초기화
+        price_json = {"global": "", "kr": ""}
+        reward_points_json = {"global": "", "kr": ""}
+        description_json = {"global": "", "kr": ""}
+        material_json = {"global": "", "kr": ""}
+        size_json = {"global": "", "kr": ""}
+        
+        # 현재 사이트의 데이터로 채우기
+        price_json[site_type] = product_data.get("price", "")
+        reward_points_json[site_type] = product_data.get("reward_points", "")
+        
+        desc_data = product_data.get("description", {})
+        description_json[site_type] = desc_data.get("description", "")
+        material_json[site_type] = desc_data.get("material", "")
+        size_json[site_type] = self._format_size_data(desc_data.get("size", {}))
+        
+        product = Product(
+            source_url=product_url,
+            product_name=product_data.get("product_name", ""),
+            color=product_data.get("color", ""),
+            price=price_json,
+            reward_points=reward_points_json,
+            description=description_json,
+            material=material_json,
+            size=size_json,
+            issoldout=product_data.get("isSoldout", False)
+        )
+        self.db.add(product)
+        self.db.commit()
+        self.db.refresh(product)
+        return product
+    
+    def _update_existing_product(self, product: Product, product_data: Dict[str, Any], site_type: str):
+        """기존 제품 업데이트"""
+        # 기존 JSON 데이터 가져오기
+        price_json = dict(product.price) if product.price else {"global": "", "kr": ""}
+        reward_points_json = dict(product.reward_points) if product.reward_points else {"global": "", "kr": ""}
+        description_json = dict(product.description) if product.description else {"global": "", "kr": ""}
+        material_json = dict(product.material) if product.material else {"global": "", "kr": ""}
+        size_json = dict(product.size) if product.size else {"global": "", "kr": ""}
+        
+        # 현재 사이트의 데이터로 업데이트
+        price_json[site_type] = product_data.get("price", "")
+        reward_points_json[site_type] = product_data.get("reward_points", "")
+        
+        desc_data = product_data.get("description", {})
+        description_json[site_type] = desc_data.get("description", "")
+        material_json[site_type] = desc_data.get("material", "")
+        size_json[site_type] = self._format_size_data(desc_data.get("size", {}))
+        
+        # 데이터베이스 업데이트
+        product.price = price_json
+        product.reward_points = reward_points_json
+        product.description = description_json
+        product.material = material_json
+        product.size = size_json
+        product.issoldout = product_data.get("isSoldout", False)
+        
+        self.db.commit()
+    
+    def _format_size_data(self, size_data: Dict[str, str]) -> str:
+        """사이즈 데이터를 문자열로 포맷팅"""
+        try:
+            size_parts = []
+            for key, value in size_data.items():
+                if value:
+                    readable_key = key.replace('_', ' ').title()
+                    size_parts.append(f"{readable_key}: {value}")
+            return ", ".join(size_parts)
         except:
             return ""
