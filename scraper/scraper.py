@@ -233,22 +233,25 @@ class ProductScraper:
             parser = etree.HTMLParser()
             tree = etree.fromstring(html_str, parser)
             
-            # Product Name 추출 - XPath 사용
-            xpath = "//th[span[contains(text(), 'Product Name')]]/following-sibling::td[1]/span[1]"
-            elements = tree.xpath(xpath)
+            # Product Name 추출 - meta keywords 사용
+            meta_keywords_xpath = "//meta[@name='keywords']"
+            meta_elements = tree.xpath(meta_keywords_xpath)
             
-            if elements:
-                full_product_name = elements[0].text
-                if full_product_name:
-                    full_product_name = full_product_name.strip()
-                    # '-'를 기준으로 제품명과 색상 분리
-                    if ' - ' in full_product_name:
-                        parts = full_product_name.split(' - ', 1)
-                        product_data["product_name"] = parts[0].strip()
-                        product_data["color"] = parts[1].strip()
-                    else:
-                        product_data["product_name"] = full_product_name
-                        product_data["color"] = ""
+            if meta_elements:
+                keywords_content = meta_elements[0].get('content')
+                if keywords_content:
+                    # 쉼표로 분리하여 첫 번째 텍스트를 가져옴
+                    keywords_list = keywords_content.split(',')
+                    if keywords_list:
+                        first_keyword = keywords_list[0].strip()
+                        # '-'를 기준으로 제품명과 색상 분리
+                        if ' - ' in first_keyword:
+                            parts = first_keyword.split(' - ', 1)
+                            product_data["product_name"] = parts[0].strip()
+                            product_data["color"] = parts[1].strip()
+                        else:
+                            product_data["product_name"] = first_keyword
+                            product_data["color"] = ""
             
             # 최소한 제품명이 있어야 유효한 데이터로 간주
             if not product_data["product_name"]:
