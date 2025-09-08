@@ -1,6 +1,5 @@
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, LargeBinary
 from sqlalchemy.sql import func
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -9,7 +8,12 @@ class Product(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     source_url = Column(Text, nullable=False)
-    product_data = Column(JSONB, nullable=False)  # JSON 형태의 제품 정보
+    product_name = Column(Text, nullable=False)  # 제품명
+    color = Column(Text, nullable=True)  # 색상
+    price = Column(Text, nullable=True)  # 가격 (원본 텍스트)
+    reward_points = Column(Text, default='0')  # 리워드 포인트 (원본 텍스트)
+    description = Column(Text, nullable=True)  # 제품 설명
+    issoldout = Column(Boolean, default=False, name='issoldout')  # 품절 여부
     indexed = Column(Boolean, default=False)
     scraped_at = Column(DateTime(timezone=True), server_default=func.now())
     indexed_at = Column(DateTime(timezone=True), nullable=True)

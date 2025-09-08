@@ -12,6 +12,7 @@ import io
 from PIL import Image
 import re
 from lxml import etree
+from decimal import Decimal
 
 class ProductScraper:
     def __init__(self, db: Session):
@@ -180,7 +181,12 @@ class ProductScraper:
             # 제품 저장
             product = Product(
                 source_url=product_url,
-                product_data=product_data
+                product_name=product_data.get("product_name", ""),
+                color=product_data.get("color", ""),
+                price=product_data.get("price", ""),  # 원본 텍스트 그대로 저장
+                reward_points=product_data.get("reward_points", ""),  # 원본 텍스트 그대로 저장
+                description=self._format_description(product_data.get("description", {})),
+                issoldout=product_data.get("isSoldout", False)
             )
             self.db.add(product)
             self.db.commit()
@@ -399,3 +405,32 @@ class ProductScraper:
         except Exception as e:
             print(f"Failed to save images for product {product_id}: {e}")
             self.db.rollback()
+    
+    
+    def _format_description(self, desc_dict: Dict[str, Any]) -> str:
+        """설명 딕셔너리를 문자열로 포맷팅"""
+        try:
+            parts = []
+            
+            # 기본 설명
+            if desc_dict.get("description"):
+                parts.append(desc_dict["description"])
+            
+            # 재질 정보
+            if desc_dict.get("material"):
+                parts.append(f"Material: {desc_dict['material']}")
+            
+            # 사이즈 정보
+            size_info = desc_dict.get("size", {})
+            size_parts = []
+            for key, value in size_info.items():
+                if value:
+                    readable_key = key.replace('_', ' ').title()
+                    size_parts.append(f"{readable_key}: {value}")
+            
+            if size_parts:
+                parts.append("Size - " + ", ".join(size_parts))
+            
+            return " | ".join(parts)
+        except:
+            return ""

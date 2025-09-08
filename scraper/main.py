@@ -47,7 +47,8 @@ class ProductInfo(BaseModel):
     source_url: str
     product_name: str
     color: str
-    price_amount: float
+    price: str  # 원본 텍스트
+    reward_points: str  # 원본 텍스트
     scraped_at: str
     indexed: bool
     image_count: int
@@ -180,17 +181,14 @@ async def get_products(
             ProductImage.product_id == product.id
         ).count()
         
-        # JSON에서 제품명과 색상, 가격 추출
-        product_name = product.product_data.get('product_name', '')
-        color = product.product_data.get('color', '')
-        price_amount = product.product_data.get('price', {}).get('amount', 0.0)
-        
+        # 새로운 컬럼 구조에서 데이터 추출
         result.append(ProductInfo(
             id=product.id,
             source_url=product.source_url,
-            product_name=product_name,
-            color=color,
-            price_amount=price_amount,
+            product_name=product.product_name or '',
+            color=product.color or '',
+            price=product.price or '',  # 원본 텍스트 그대로
+            reward_points=product.reward_points or '',  # 원본 텍스트 그대로
             scraped_at=product.scraped_at.isoformat(),
             indexed=product.indexed,
             image_count=image_count

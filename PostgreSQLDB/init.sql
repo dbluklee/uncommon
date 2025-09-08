@@ -4,7 +4,12 @@
 CREATE TABLE products (
     id SERIAL PRIMARY KEY,
     source_url TEXT NOT NULL,           -- 스크래핑한 페이지 URL
-    product_data JSONB NOT NULL,        -- 제품 정보 JSON (가격, 재질, 특징 등)
+    product_name TEXT NOT NULL,         -- 제품명
+    color TEXT,                         -- 색상
+    price DECIMAL(10, 2),              -- 가격
+    reward_points INTEGER DEFAULT 0,    -- 리워드 포인트
+    description TEXT,                   -- 제품 설명
+    isSoldout BOOLEAN DEFAULT FALSE,    -- 품절 여부
     indexed BOOLEAN DEFAULT FALSE,      -- 벡터DB 인덱싱 여부
     scraped_at TIMESTAMP DEFAULT NOW(),
     indexed_at TIMESTAMP
