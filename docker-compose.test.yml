@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  test-scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: uncommon_test_scraper
+    network_mode: host  # 외부 웹사이트 접근을 위해
+    volumes:
+      - ./test_scraper.py:/app/test_scraper.py  # 실시간 코드 수정 반영
+    command: python test_scraper.py

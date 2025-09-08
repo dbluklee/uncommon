@@ -1,0 +1,29 @@
+services:
+  scraper:
+    build: .
+    container_name: uncommon_rag-scraper
+    env_file:
+      - ../.env.global
+      - .env
+    environment:
+      DB_HOST: ${POSTGRES_HOST}
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
+    ports:
+      - "${SCRAPER_PORT}:8000"
+    networks:
+      - uncommon_rag-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  uncommon_rag-network:
+    external: true
+    name: ${NETWORK_NAME}

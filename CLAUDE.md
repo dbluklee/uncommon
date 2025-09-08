@@ -215,3 +215,161 @@ cd ../webapp && docker-compose up -d
 3. BGE-M3 임베딩 모델은 첫 실행 시 자동 다운로드
 4. Ollama는 외부 서버(112.148.37.41:1884)에서 실행 중
 5. 관리자 API는 ADMIN_API_KEY로 인증
+
+---
+
+## 📊 현재 개발 진행 상황 (2024-09-08)
+
+### ✅ 완료된 작업
+1. **프로젝트 기본 구조**
+   - CLAUDE.md 파일 생성 및 계획 문서화
+   - .env.global 전역 환경변수 설정
+   - 프로젝트 폴더 구조 생성
+
+2. **PostgreSQL 데이터베이스**
+   - Docker 구성 (PostgreSQLDB/docker-compose.yml)
+   - 스키마 정의 (init.sql) - 제품 중심 구조
+   - 환경변수 설정 (.env)
+
+3. **Milvus 벡터 데이터베이스**
+   - Docker 구성 (MilvusDB/docker-compose.yml)
+   - 환경변수 설정 (.env)
+
+4. **Scraper 서비스 ✅ 완료**
+   - requirements.txt - 필요한 패키지 정의 ✅
+   - Dockerfile - Python 컨테이너 설정 ✅
+   - docker-compose.yml - 서비스 구성 ✅
+   - 환경변수 설정 (.env) ✅
+   - main.py - FastAPI 애플리케이션 ✅
+   - database.py - PostgreSQL 연결 ✅
+   - models.py - SQLAlchemy 모델 ✅
+   - scraper.py - 스크래핑 로직 ✅
+   - **테스트 완료**: 2개 제품, 20개 이미지 성공적으로 스크래핑 ✅
+
+5. **시스템 관리 스크립트**
+   - start.sh - 전체 시스템 시작
+   - stop.sh - 전체 시스템 종료
+
+### 🚧 현재 작업 중
+- **Scraper 서비스 완료 ✅**
+- **다음: Indexing 서비스 개발**
+
+---
+
+## 📋 향후 개발 Todo 리스트
+
+### ✅ 1. Scraper 서비스 완성
+- [x] **database.py** - PostgreSQL 연결 설정
+- [x] **models.py** - SQLAlchemy 모델 (Product, ProductImage, ScrapingJob)  
+- [x] **scraper.py** - 제품 스크래핑 로직 구현
+  - [x] BeautifulSoup4로 HTML 파싱
+  - [x] 제품 정보 추출 (이름, 가격, 재질, 특징 등)
+  - [x] 이미지 다운로드 및 바이너리 저장
+  - [x] JSON 형태로 제품 데이터 구조화
+  - [x] IP 차단 방지 (User-Agent 로테이션, 랜덤 지연)
+  - [x] UNCOMMON 사이트 특화 파싱 로직
+- [x] **main.py** - FastAPI 애플리케이션 완성
+  - [x] 관리자 인증 구현
+  - [x] `/admin/scrape` API 엔드포인트
+  - [x] `/admin/jobs` 작업 상태 조회 API
+  - [x] `/admin/products` 제품 목록 조회 API
+  - [x] `/admin/stats` 시스템 통계 API
+  - [x] 백그라운드 스크래핑 작업 처리
+- [x] **테스트 검증 완료**
+  - [x] 2개 제품 성공적으로 스크래핑
+  - [x] 20개 이미지 PostgreSQL 저장
+  - [x] JSON 구조로 제품 데이터 저장
+
+### 2. Indexing 서비스 구현
+- [ ] **requirements.txt** - BGE-M3, Milvus 등 패키지
+- [ ] **Dockerfile** - Python 환경 설정
+- [ ] **docker-compose.yml** - 서비스 구성
+- [ ] **database.py** - PostgreSQL 연결
+- [ ] **models.py** - 데이터 모델
+- [ ] **processor.py** - BGE-M3 임베딩 처리
+  - [ ] CUDA 사용 설정 (USE_CUDA 환경변수)
+  - [ ] 텍스트 청킹 (CHUNK_SIZE=500)
+  - [ ] 배치 처리 (EMBEDDING_BATCH_SIZE=32)
+- [ ] **milvus_client.py** - Milvus 연결 및 벡터 저장
+- [ ] **main.py** - FastAPI 애플리케이션
+  - [ ] `/process/new-products` - 새 제품 처리 API
+  - [ ] `/index/status` - 인덱싱 상태 API
+
+### 3. RAG API 서비스 구현
+- [ ] **requirements.txt** - BGE-M3, Milvus, requests 등
+- [ ] **Dockerfile** - Python 환경
+- [ ] **docker-compose.yml** - 서비스 구성
+- [ ] **rag_engine.py** - RAG 핵심 로직
+  - [ ] BGE-M3 쿼리 임베딩 생성
+  - [ ] Milvus 유사도 검색 (TOP_K=5)
+  - [ ] Ollama Gemma3 API 연동
+  - [ ] 컨텍스트 구성 및 응답 생성
+- [ ] **main.py** - FastAPI 애플리케이션
+  - [ ] `/chat` - 일반 질문 응답
+  - [ ] `/chat/stream` - 스트리밍 응답
+  - [ ] 이미지 업로드 처리 (멀티모달)
+
+### 4. Web App 구현
+- [ ] **requirements.txt** 또는 **package.json**
+- [ ] **Dockerfile** - 웹서버 환경
+- [ ] **docker-compose.yml** - 서비스 구성
+- [ ] **index.html** - 메인 페이지
+  - [ ] 모바일 최적화 UI
+  - [ ] QR 코드 표시
+  - [ ] 채팅 인터페이스
+- [ ] **app.js** - 프론트엔드 로직
+  - [ ] RAG API 통신
+  - [ ] 이미지 업로드 기능
+  - [ ] 스트리밍 응답 처리
+- [ ] **style.css** - 반응형 스타일
+
+### 5. 시스템 통합 및 테스트
+- [ ] 전체 시스템 통합 테스트
+- [ ] 스크래핑 → 인덱싱 → 검색 파이프라인 검증
+- [ ] 에러 처리 및 로깅 개선
+- [ ] 성능 최적화
+
+---
+
+---
+
+## 📊 스크래핑 테스트 결과 (2025-09-08)
+
+### ✅ 성공적으로 완료된 테스트
+- **스크래핑 대상**: `https://ucmeyewear.earth/category/all/87/`
+- **발견된 제품 링크**: 36개
+- **테스트 스크래핑**: 2개 제품
+- **총 이미지**: 20개 (제품당 10개)
+- **소요시간**: 약 26초
+
+### 스크래핑된 제품 데이터
+1. **WAVE 0.01 (BLACK)** - $170.00
+2. **WAVE 0.02 (BLACK)** - $170.00
+
+### 검증된 기능
+- ✅ 환경변수 관리 (.env.global)
+- ✅ 포트 충돌 방지 (PostgreSQL: 5434, Scraper: 8011)
+- ✅ 컨테이너 네이밍 (uncommon_ 접두사)
+- ✅ IP 차단 방지 메커니즘
+- ✅ JSON 구조화된 데이터 저장
+- ✅ 이미지 바이너리 DB 저장
+- ✅ 관리자 API 인증 및 상태 조회
+
+---
+
+## 🎯 다음 개발 세션 시작점
+**Indexing 서비스 개발 시작**
+1. `indexing/requirements.txt` - BGE-M3, Milvus 패키지
+2. `indexing/Dockerfile` - Python 환경 설정  
+3. `indexing/main.py` - FastAPI 애플리케이션
+4. `indexing/processor.py` - BGE-M3 임베딩 처리
+5. `indexing/milvus_client.py` - Milvus 연결 및 벡터 저장
+
+**현재 실행 중인 서비스:**
+- PostgreSQL: `localhost:5434` (uncommon_rag-postgres)
+- Scraper API: `localhost:8011` (uncommon_rag-scraper)
+
+**다음 구현 목표:**
+- PostgreSQL에서 제품 데이터 읽기
+- BGE-M3로 텍스트 임베딩 생성
+- Milvus에 벡터 저장

@@ -1,30 +1,23 @@
 {
-  "product_name": "FL05",
-  "color": "Black",
-  "price": {
-    "amount": 90.00,
-    "currency": "USD"
-  },
+  "product_name": "FLB01 - Brown",
+  "color": "Brown",
+  "price": 70.00,
   "reward_points": {
-    "amount": 4.00,
+    "amount": 3.00,
     "percentage": 5
   },
-  "product_info": {
-    "description": "Feather-Light 05 is a collaborative piece developed with the casual workwear brand HaveHad. Built upon Uncommon Eyewear’s extensive design expertise, it features a unisex, versatile silhouette for a comfortable fit on all face shapes. Weighing only approximately 12.5g, it delivers a feather-light wearing experience that lasts all day. The addition of silicone nose pads on the front frame helps distribute weight evenly, reducing pressure on the nose for improved balance and comfort.",
-    "material": "POLYAMIDE & STAINLESS STEEL"
+  "description": {
+    "description": "A model made with Rilsan® Clear, an eco-friendly material from ARKEMA (France) that is both recyclable and upcyclable Equipped with hidden spring hinges from OBE (Germany) Provides flexible movement and enhanced durability ",
+    "material": "Polyamide (Bio-Based)",
+    "size": {
+        "lens_width": "48mm",
+        "lens_height": "39mm",
+        "bridge_width": "21mm",
+        "frame_width": "142mm",
+        "temple_length": "145mm"
+    },
+    "notice": "*Notice Regarding Customs Duties and VAT* 1. Customs duties and VAT are applied differently depending on the laws and regulations of the destination country. 2. The shipping cost declared for customs clearance is not subject to customs duties and VAT charged by Uncommon Evewear. 3. Additional domestic taxes may apply depending on the item."
   },
-  "size": {
-    "lens_width": "48mm",
-    "lens_height": "39mm",
-    "bridge_width": "21mm",
-    "frame_width": "142mm",
-    "temple_length": "145mm"
-  },
-  "options": {
-    "lens_processing": {
-      "name": "Lens Processing Option",
-      "note": "Since the lenses are customized to your glasses, the option fee will be deducted from any refund. Please confirm your agreement by noting it on the order form.",
-      "processing_time": "2-3 days"
-    }
-  }
+  "isSoldout": false,
+  "contry": "global"
 }
