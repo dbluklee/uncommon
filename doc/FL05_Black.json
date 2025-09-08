@@ -1,0 +1,30 @@
+{
+  "product_name": "FL05",
+  "color": "Black",
+  "price": {
+    "amount": 90.00,
+    "currency": "USD"
+  },
+  "reward_points": {
+    "amount": 4.00,
+    "percentage": 5
+  },
+  "product_info": {
+    "description": "Feather-Light 05 is a collaborative piece developed with the casual workwear brand HaveHad. Built upon Uncommon Eyewear’s extensive design expertise, it features a unisex, versatile silhouette for a comfortable fit on all face shapes. Weighing only approximately 12.5g, it delivers a feather-light wearing experience that lasts all day. The addition of silicone nose pads on the front frame helps distribute weight evenly, reducing pressure on the nose for improved balance and comfort.",
+    "material": "POLYAMIDE & STAINLESS STEEL"
+  },
+  "size": {
+    "lens_width": "48mm",
+    "lens_height": "39mm",
+    "bridge_width": "21mm",
+    "frame_width": "142mm",
+    "temple_length": "145mm"
+  },
+  "options": {
+    "lens_processing": {
+      "name": "Lens Processing Option",
+      "note": "Since the lenses are customized to your glasses, the option fee will be deducted from any refund. Please confirm your agreement by noting it on the order form.",
+      "processing_time": "2-3 days"
+    }
+  }
+}

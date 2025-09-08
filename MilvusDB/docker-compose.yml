@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  milvus:
+    image: milvusdb/milvus:v2.3.3
+    container_name: ${MILVUS_HOST}
+    command: ["milvus", "run", "standalone"]
+    env_file:
+      - ../.env.global
+      - .env
+    environment:
+      ETCD_USE_EMBED: ${ETCD_USE_EMBED}
+      COMMON_STORAGETYPE: ${COMMON_STORAGETYPE}
+    volumes:
+      - ${MILVUS_DATA_PATH}:/var/lib/milvus
+    ports:
+      - "${MILVUS_PORT}:19530"
+      - "${MILVUS_METRICS_PORT}:9091"
+    networks:
+      - rag-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  rag-network:
+    external: true
+    name: ${NETWORK_NAME}
