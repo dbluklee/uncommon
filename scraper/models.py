@@ -8,7 +8,8 @@ class Product(Base):
     __tablename__ = "products"
     
     id = Column(Integer, primary_key=True, index=True)
-    source_url = Column(Text, nullable=False)
+    source_global_url = Column(Text, nullable=True)  # 영문 사이트 URL
+    source_kr_url = Column(Text, nullable=True)  # 한글 사이트 URL
     product_name = Column(Text, nullable=False)  # 제품명
     color = Column(Text, nullable=True)  # 색상
     price = Column(JSONB, default={})  # 가격 JSON: {"global": "", "kr": ""}

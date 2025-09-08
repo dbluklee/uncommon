@@ -13,6 +13,7 @@ from PIL import Image
 import re
 from lxml import etree
 from decimal import Decimal
+import html
 
 class ProductScraper:
     def __init__(self, db: Session):
@@ -36,6 +37,19 @@ class ProductScraper:
         # 요청 간격 설정 (IP 차단 방지)
         self.min_delay = 2  # 최소 2초 대기
         self.max_delay = 5  # 최대 5초 대기
+    
+    def _clean_text(self, text: str) -> str:
+        """HTML 엔티티를 디코딩하고 텍스트를 정리"""
+        if not text:
+            return ""
+        
+        # HTML 엔티티 디코딩
+        cleaned = html.unescape(text)
+        
+        # 추가 정리 (줄바꿈, 탭, 여러 공백 정리)
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        
+        return cleaned
         
     def _update_session_headers(self):
         """세션 헤더 업데이트 (IP 차단 방지)"""
@@ -214,7 +228,7 @@ class ProductScraper:
             if existing_product:
                 # 기존 제품 업데이트
                 print(f"Updating existing product: {product_name} - {color}")
-                self._update_existing_product(existing_product, product_data, site_type)
+                self._update_existing_product(existing_product, product_url, product_data, site_type)
             else:
                 # 새 제품 생성  
                 print(f"Creating new product: {product_name} - {color}")
@@ -309,7 +323,7 @@ class ProductScraper:
                 # 1. Material 추출
                 material_match = re.search(r'-Material\s*:\s*(.+?)(?:\n|$)', desc_text)
                 if material_match:
-                    product_data["description"]["material"] = material_match.group(1).strip()
+                    product_data["description"]["material"] = self._clean_text(material_match.group(1).strip())
                     # Material 라인 제거
                     desc_text = desc_text.replace(material_match.group(0), '')
                 
@@ -325,7 +339,7 @@ class ProductScraper:
                 for key, pattern in size_patterns.items():
                     match = re.search(pattern, desc_text)
                     if match:
-                        product_data["description"]["size"][key] = match.group(1).strip()
+                        product_data["description"]["size"][key] = self._clean_text(match.group(1).strip())
                         # 해당 라인 제거
                         desc_text = desc_text.replace(match.group(0), '')
                 
@@ -345,18 +359,19 @@ class ProductScraper:
                 desc_text = desc_text.strip()
                 
                 # 최종 description 저장
-                product_data["description"]["description"] = desc_text
+                product_data["description"]["description"] = self._clean_text(desc_text)
             
             # 품절 여부 확인 - sold out 버튼 체크
             soldout_xpath = "//span[contains(@class, 'button_left displaynone') and normalize-space()='sold out']"
             soldout_elements = tree.xpath(soldout_xpath)
             
+            # soldout_elements가 있으면 아직 판매중 (displaynone이므로 숨겨져 있음)
             if soldout_elements:
-                product_data["isSoldout"] = True
-                print(f"Product is SOLD OUT: {product_data.get('product_name', 'Unknown')}")
-            else:
-                product_data["isSoldout"] = False
+                product_data["isSoldout"] = False  # 아직 판매중
                 print(f"Product is AVAILABLE: {product_data.get('product_name', 'Unknown')}")
+            else:
+                product_data["isSoldout"] = True  # 제품 솔드아웃됨
+                print(f"Product is SOLD OUT: {product_data.get('product_name', 'Unknown')}")
             
             return product_data
             
@@ -380,23 +395,10 @@ class ProductScraper:
             for img in image_elements:
                 src = img.get('src')
                 if src:
-                    # 상대경로를 절대경로로 변환 (사이트별 도메인)
-                    if src.startswith('http'):
-                        # 이미 완전한 URL인 경우 그대로 사용
-                        full_url = src
-                    elif src.startswith('/'):
-                        # 절대 경로인 경우
-                        if site_type == "kr":
-                            full_url = f"https://ucmeyewear.com{src}"
-                        else:
-                            full_url = f"https://ucmeyewear.earth{src}"
-                    else:
-                        # 상대 경로인 경우
-                        if site_type == "kr":
-                            full_url = f"https://ucmeyewear.com/{src}"
-                        else:
-                            full_url = f"https://ucmeyewear.earth/{src}"
-                    image_urls.append(full_url)
+                    # URL 정규화 - 이중 경로 문제 해결
+                    full_url = self._normalize_image_url(src, site_type)
+                    if full_url:
+                        image_urls.append(full_url)
             
             print(f"Found {len(image_urls)} product images")
             return image_urls
@@ -404,6 +406,20 @@ class ProductScraper:
         except Exception as e:
             print(f"Error extracting image URLs: {e}")
             return []
+    
+    def _normalize_image_url(self, src: str, site_type: str = "global") -> Optional[str]:
+        """이미지 URL 정규화 - //로 시작하는 경우만 처리"""
+        try:
+            # //domain/path 형태인 경우 https: 추가
+            if src.startswith('//'):
+                return f"https:{src}"
+            else:
+                print(f"Unexpected image URL format: {src}")
+                return None
+                
+        except Exception as e:
+            print(f"Error normalizing image URL {src}: {e}")
+            return None
     
     def _download_and_save_images(self, product_id: int, image_urls: List[str]):
         """이미지들을 다운로드하고 데이터베이스에 저장"""
@@ -491,8 +507,13 @@ class ProductScraper:
         material_json[site_type] = desc_data.get("material", "")
         size_json[site_type] = self._format_size_data(desc_data.get("size", {}))
         
+        # URL 필드 설정
+        source_global_url = product_url if site_type == "global" else None
+        source_kr_url = product_url if site_type == "kr" else None
+        
         product = Product(
-            source_url=product_url,
+            source_global_url=source_global_url,
+            source_kr_url=source_kr_url,
             product_name=product_data.get("product_name", ""),
             color=product_data.get("color", ""),
             price=price_json,
@@ -507,8 +528,14 @@ class ProductScraper:
         self.db.refresh(product)
         return product
     
-    def _update_existing_product(self, product: Product, product_data: Dict[str, Any], site_type: str):
+    def _update_existing_product(self, product: Product, product_url: str, product_data: Dict[str, Any], site_type: str):
         """기존 제품 업데이트"""
+        # URL 업데이트
+        if site_type == "global":
+            product.source_global_url = product_url
+        else:
+            product.source_kr_url = product_url
+        
         # 기존 JSON 데이터 가져오기
         price_json = dict(product.price) if product.price else {"global": "", "kr": ""}
         reward_points_json = dict(product.reward_points) if product.reward_points else {"global": "", "kr": ""}

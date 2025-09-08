@@ -3,13 +3,16 @@
 -- Products table for storing scraped product information
 CREATE TABLE products (
     id SERIAL PRIMARY KEY,
-    source_url TEXT NOT NULL,           -- 스크래핑한 페이지 URL
+    source_global_url TEXT,             -- 영문 사이트 URL
+    source_kr_url TEXT,                 -- 한글 사이트 URL
     product_name TEXT NOT NULL,         -- 제품명
     color TEXT,                         -- 색상
-    price DECIMAL(10, 2),              -- 가격
-    reward_points INTEGER DEFAULT 0,    -- 리워드 포인트
-    description TEXT,                   -- 제품 설명
-    isSoldout BOOLEAN DEFAULT FALSE,    -- 품절 여부
+    price JSONB DEFAULT '{}',           -- 가격 {"global": "", "kr": ""}
+    reward_points JSONB DEFAULT '{}',   -- 리워드 포인트
+    description JSONB DEFAULT '{}',     -- 제품 설명
+    material JSONB DEFAULT '{}',        -- 재질
+    size JSONB DEFAULT '{}',            -- 사이즈
+    issoldout BOOLEAN DEFAULT FALSE,    -- 품절 여부
     indexed BOOLEAN DEFAULT FALSE,      -- 벡터DB 인덱싱 여부
     scraped_at TIMESTAMP DEFAULT NOW(),
     indexed_at TIMESTAMP
