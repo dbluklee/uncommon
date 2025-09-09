@@ -143,26 +143,67 @@
         
         .chat-input {
             display: flex;
+            flex-direction: column;
             padding: 20px;
             background: white;
             border-top: 1px solid #e0e0e0;
         }
         
-        .chat-input input {
+        .input-row {
+            display: flex;
+            align-items: flex-end;
+            gap: 10px;
+        }
+        
+        .chat-input input[type="text"] {
             flex: 1;
             padding: 12px 16px;
             border: 1px solid #ddd;
             border-radius: 25px;
             outline: none;
             font-size: 14px;
+            resize: none;
         }
         
-        .chat-input input:focus {
+        .chat-input input[type="text"]:focus {
             border-color: #007bff;
         }
         
-        .chat-input button {
-            margin-left: 10px;
+        .image-upload-btn {
+            position: relative;
+            padding: 10px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+        
+        .image-upload-btn {
+            font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        
+        .image-upload-btn:hover {
+            background: #218838;
+        }
+        
+        .image-upload-btn input[type="file"] {
+            position: absolute;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+        
+        .send-button {
             padding: 12px 20px;
             background: #007bff;
             color: white;
@@ -174,13 +215,79 @@
             transition: background 0.2s;
         }
         
-        .chat-input button:hover {
+        .send-button:hover {
             background: #0056b3;
         }
         
-        .chat-input button:disabled {
+        .send-button:disabled {
             background: #ccc;
             cursor: not-allowed;
+        }
+        
+        /* 이미지 미리보기 */
+        .image-preview {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border: 2px dashed #dee2e6;
+            border-radius: 10px;
+            display: none;
+        }
+        
+        .image-preview.active {
+            display: block;
+        }
+        
+        .preview-container {
+            position: relative;
+            display: inline-block;
+        }
+        
+        .preview-image {
+            max-width: 200px;
+            max-height: 150px;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+        
+        .remove-image {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .remove-image:hover {
+            background: #c82333;
+        }
+        
+        .image-info {
+            margin-top: 5px;
+            font-size: 12px;
+            color: #6c757d;
+        }
+        
+        /* 메시지에서 이미지 표시 */
+        .message-image {
+            max-width: 200px;
+            max-height: 150px;
+            border-radius: 8px;
+            margin-top: 8px;
+            cursor: pointer;
+        }
+        
+        .message-image:hover {
+            opacity: 0.8;
         }
         
         .sources {
@@ -355,8 +462,24 @@
         </div>
         
         <div class="chat-input">
-            <input type="text" id="messageInput" placeholder="WAVE 안경에 대해 궁금한 것을 물어보세요..." />
-            <button id="sendButton" onclick="sendMessage()">전송</button>
+            <!-- 이미지 미리보기 영역 -->
+            <div class="image-preview" id="imagePreview">
+                <div class="preview-container">
+                    <img class="preview-image" id="previewImage" alt="미리보기" />
+                    <button class="remove-image" onclick="removeImage()" title="이미지 제거">×</button>
+                </div>
+                <div class="image-info" id="imageInfo"></div>
+            </div>
+            
+            <!-- 입력 영역 -->
+            <div class="input-row">
+                <input type="text" id="messageInput" placeholder="WAVE 안경에 대해 궁금한 것을 물어보세요..." />
+                <button class="image-upload-btn" title="이미지 첨부">
+                    📸
+                    <input type="file" id="imageInput" accept="image/jpeg,image/jpg,image/png,image/gif,image/webp" onchange="handleImageSelect(event)" />
+                </button>
+                <button class="send-button" id="sendButton" onclick="sendMessage()">전송</button>
+            </div>
         </div>
     </div>
 
@@ -366,16 +489,71 @@
         const sendButton = document.getElementById('sendButton');
         const debugPanel = document.getElementById('debugPanel');
         const debugContent = document.getElementById('debugContent');
+        const imageInput = document.getElementById('imageInput');
+        const imagePreview = document.getElementById('imagePreview');
+        const previewImage = document.getElementById('previewImage');
+        const imageInfo = document.getElementById('imageInfo');
         
         // RAG API URL - 직접 연결 (브라우저에서 접근 가능한 주소)
         const RAG_API_URL = `http://${window.location.hostname}:8013`;
         
         let isLoading = false;
         let currentDebugInfo = null;
+        let selectedImage = null;
         
         // 디버깅 패널 토글
         function toggleDebugPanel() {
             debugPanel.classList.toggle('open');
+        }
+        
+        // 이미지 선택 처리
+        function handleImageSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            // 파일 크기 검증 (10MB)
+            if (file.size > 10 * 1024 * 1024) {
+                alert('이미지 크기가 10MB를 초과합니다.');
+                event.target.value = '';
+                return;
+            }
+            
+            // 파일 타입 검증
+            const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+            if (!allowedTypes.includes(file.type)) {
+                alert('지원되지 않는 이미지 형식입니다.\n(JPEG, PNG, GIF, WebP 지원)');
+                event.target.value = '';
+                return;
+            }
+            
+            selectedImage = file;
+            
+            // 미리보기 표시
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                previewImage.src = e.target.result;
+                imageInfo.textContent = `${file.name} (${formatFileSize(file.size)})`;
+                imagePreview.classList.add('active');
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        // 이미지 제거
+        function removeImage() {
+            selectedImage = null;
+            imageInput.value = '';
+            imagePreview.classList.remove('active');
+            previewImage.src = '';
+            imageInfo.textContent = '';
+        }
+        
+        // 파일 크기 포맷팅
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
         
         // 디버깅 정보 업데이트
@@ -470,7 +648,7 @@
             currentDebugInfo = debugInfo;
         }
         
-        function addMessage(content, isUser = false, sources = []) {
+        function addMessage(content, isUser = false, sources = [], imageData = null) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${isUser ? 'user' : 'bot'}`;
             
@@ -480,7 +658,22 @@
             
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
-            contentDiv.innerHTML = content;
+            
+            // 이미지가 있는 경우 먼저 표시
+            if (isUser && imageData) {
+                const imageElement = document.createElement('img');
+                imageElement.className = 'message-image';
+                imageElement.src = imageData;
+                imageElement.onclick = () => openImageModal(imageData);
+                contentDiv.appendChild(imageElement);
+            }
+            
+            // 텍스트 내용 추가
+            if (content) {
+                const textDiv = document.createElement('div');
+                textDiv.innerHTML = content;
+                contentDiv.appendChild(textDiv);
+            }
             
             if (!isUser) {
                 messageDiv.appendChild(avatar);
@@ -507,6 +700,37 @@
             chatMessages.appendChild(messageDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;
             return contentDiv;
+        }
+        
+        // 이미지 모달 열기
+        function openImageModal(imageSrc) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.8);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 2000;
+                cursor: pointer;
+            `;
+            
+            const img = document.createElement('img');
+            img.src = imageSrc;
+            img.style.cssText = `
+                max-width: 90%;
+                max-height: 90%;
+                border-radius: 8px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            `;
+            
+            modal.appendChild(img);
+            modal.onclick = () => document.body.removeChild(modal);
+            document.body.appendChild(modal);
         }
         
         function showTypingIndicator() {
@@ -544,10 +768,21 @@
         
         async function sendMessage() {
             const message = messageInput.value.trim();
-            if (!message || isLoading) return;
+            if ((!message && !selectedImage) || isLoading) return;
             
-            // 사용자 메시지 추가
-            addMessage(message, true);
+            let imageDataUrl = null;
+            
+            // 이미지가 있는 경우 데이터 URL 생성 (미리보기용)
+            if (selectedImage) {
+                const reader = new FileReader();
+                imageDataUrl = await new Promise((resolve) => {
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsDataURL(selectedImage);
+                });
+            }
+            
+            // 사용자 메시지 추가 (이미지 포함)
+            addMessage(message, true, [], imageDataUrl);
             messageInput.value = '';
             
             // 로딩 상태 설정
@@ -559,18 +794,36 @@
             showTypingIndicator();
             
             try {
-                const response = await fetch(`${RAG_API_URL}/chat`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        query: message,
-                        stream: true,
-                        top_k: 5,
-                        include_debug: true  // 디버깅 정보 포함 요청
-                    })
-                });
+                let response;
+                
+                if (selectedImage) {
+                    // 멀티모달 요청 (FormData 사용)
+                    const formData = new FormData();
+                    formData.append('query', message);
+                    formData.append('stream', 'true');
+                    formData.append('top_k', '5');
+                    formData.append('include_debug', 'true');
+                    formData.append('image', selectedImage);
+                    
+                    response = await fetch(`${RAG_API_URL}/chat/multimodal`, {
+                        method: 'POST',
+                        body: formData
+                    });
+                } else {
+                    // 기존 텍스트 전용 요청
+                    response = await fetch(`${RAG_API_URL}/chat`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            query: message,
+                            stream: true,
+                            top_k: 5,
+                            include_debug: true
+                        })
+                    });
+                }
                 
                 if (!response.ok) {
                     throw new Error('API 요청 실패');
@@ -654,6 +907,12 @@
             isLoading = false;
             sendButton.disabled = false;
             sendButton.textContent = '전송';
+            
+            // 이미지 초기화
+            if (selectedImage) {
+                removeImage();
+            }
+            
             messageInput.focus();
         }
         
@@ -667,6 +926,47 @@
         
         // 페이지 로드 시 입력창에 포커스
         messageInput.focus();
+        
+        // 드래그 앤 드롭 이벤트 설정
+        const chatContainer = document.querySelector('.chat-container');
+        
+        chatContainer.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            chatContainer.style.backgroundColor = '#f8f9fa';
+        });
+        
+        chatContainer.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            chatContainer.style.backgroundColor = '';
+        });
+        
+        chatContainer.addEventListener('drop', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            chatContainer.style.backgroundColor = '';
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const file = files[0];
+                
+                // 이미지 파일만 허용
+                if (file.type.startsWith('image/')) {
+                    // 기존 이미지 제거
+                    if (selectedImage) {
+                        removeImage();
+                    }
+                    
+                    // 새 이미지 설정
+                    imageInput.files = files;
+                    const event = { target: { files: files } };
+                    handleImageSelect(event);
+                } else {
+                    alert('이미지 파일만 업로드 가능합니다.');
+                }
+            }
+        });
     </script>
 </body>
 </html>

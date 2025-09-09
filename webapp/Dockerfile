@@ -1,7 +1,7 @@
 FROM nginx:alpine
 
-# Copy HTML file to nginx default location
-COPY index.html /usr/share/nginx/html/
+# Copy all HTML files to nginx default location
+COPY *.html /usr/share/nginx/html/
 
 # Copy custom nginx configuration if needed
 COPY nginx.conf /etc/nginx/conf.d/default.conf

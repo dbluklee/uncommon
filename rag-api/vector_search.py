@@ -5,10 +5,13 @@ Milvus를 사용한 유사도 검색
 
 import os
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pymilvus import Collection, connections, utility
 import json
 import time
+import asyncio
+from datetime import datetime
+import asyncpg
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +22,15 @@ class VectorSearcher:
         """벡터 검색기 초기화"""
         self.embedding_generator = embedding_generator
         self.collection_name = os.getenv("COLLECTION_NAME", "uncommon_products")
+        
+        # PostgreSQL 연결 정보
+        self.postgres_config = {
+            "host": os.getenv("POSTGRES_HOST", "localhost"),
+            "port": int(os.getenv("POSTGRES_PORT", "5432")),
+            "database": os.getenv("POSTGRES_DB", "ragdb"),
+            "user": os.getenv("POSTGRES_USER", "raguser"),
+            "password": os.getenv("POSTGRES_PASSWORD", "ragpass2024!")
+        }
         
         # Milvus 연결
         self._connect_milvus()
@@ -217,3 +229,205 @@ class VectorSearcher:
                 logger.info(f"컬렉션 '{self.collection_name}' 언로드 완료")
         except Exception as e:
             logger.error(f"컬렉션 언로드 실패: {str(e)}")
+
+    # ========== 관리자 기능 메서드들 ==========
+    
+    async def _get_postgres_connection(self):
+        """PostgreSQL 연결 생성"""
+        try:
+            return await asyncpg.connect(**self.postgres_config)
+        except Exception as e:
+            logger.error(f"PostgreSQL 연결 실패: {str(e)}")
+            raise
+
+    async def get_document_stats(self) -> Dict[str, Any]:
+        """PostgreSQL의 문서 통계 정보 반환"""
+        try:
+            conn = await self._get_postgres_connection()
+            
+            # 총 문서 수
+            total_docs = await conn.fetchval("SELECT COUNT(*) FROM documents")
+            
+            # 인덱싱된 문서 수
+            indexed_docs = await conn.fetchval("SELECT COUNT(*) FROM documents WHERE indexed = true")
+            
+            # 대기 중인 문서 수
+            pending_docs = total_docs - indexed_docs
+            
+            # 최근 업데이트
+            last_update = await conn.fetchval(
+                "SELECT MAX(indexed_at) FROM documents WHERE indexed_at IS NOT NULL"
+            )
+            
+            await conn.close()
+            
+            return {
+                "total_documents": total_docs,
+                "indexed_documents": indexed_docs,
+                "pending_documents": pending_docs,
+                "last_update": str(last_update) if last_update else None
+            }
+            
+        except Exception as e:
+            logger.error(f"문서 통계 조회 실패: {str(e)}")
+            return {"error": str(e)}
+
+    async def get_all_documents(self) -> List[Dict[str, Any]]:
+        """모든 문서 목록 조회"""
+        try:
+            conn = await self._get_postgres_connection()
+            
+            # documents 테이블에서 모든 문서 조회
+            query = """
+                SELECT 
+                    id, title, url, content,
+                    indexed, scraped_at, indexed_at
+                FROM documents 
+                ORDER BY scraped_at DESC
+            """
+            
+            rows = await conn.fetch(query)
+            
+            documents = []
+            for row in rows:
+                doc = {
+                    "id": row["id"],
+                    "title": row["title"] or row["url"] or f"문서 {row['id']}",
+                    "content": row["content"][:200] + "..." if len(row["content"]) > 200 else row["content"],
+                    "category": "scraped" if row["url"] else "manual",
+                    "indexed": row["indexed"],
+                    "created_at": row["scraped_at"] or datetime.utcnow(),
+                    "indexed_at": row["indexed_at"]
+                }
+                documents.append(doc)
+            
+            await conn.close()
+            return documents
+            
+        except Exception as e:
+            logger.error(f"문서 목록 조회 실패: {str(e)}")
+            return []
+
+    async def get_document_vector_count(self, doc_id: int) -> int:
+        """특정 문서의 벡터 개수 조회"""
+        try:
+            # Milvus에서 해당 문서의 벡터 개수 조회
+            expr = f"product_id == {doc_id}"
+            query_result = self.collection.query(expr=expr, output_fields=["id"])
+            return len(query_result)
+            
+        except Exception as e:
+            logger.error(f"벡터 개수 조회 실패 (doc_id: {doc_id}): {str(e)}")
+            return 0
+
+    async def add_manual_document(self, title: str, content: str, category: str = "manual") -> int:
+        """수동으로 문서 추가"""
+        try:
+            conn = await self._get_postgres_connection()
+            
+            # documents 테이블에 삽입 (url은 NULL, title 사용)
+            query = """
+                INSERT INTO documents (title, content, indexed, scraped_at)
+                VALUES ($1, $2, false, NOW())
+                RETURNING id
+            """
+            
+            doc_id = await conn.fetchval(query, title, content)
+            
+            await conn.close()
+            logger.info(f"✅ 수동 문서 추가 완료: ID={doc_id}, 제목={title}")
+            
+            return doc_id
+            
+        except Exception as e:
+            logger.error(f"수동 문서 추가 실패: {str(e)}")
+            raise
+
+    async def index_document(self, doc_id: int) -> bool:
+        """특정 문서를 벡터화하여 Milvus에 저장"""
+        try:
+            conn = await self._get_postgres_connection()
+            
+            # 문서 정보 조회
+            query = "SELECT title, content FROM documents WHERE id = $1 AND indexed = false"
+            doc = await conn.fetchrow(query, doc_id)
+            
+            if not doc:
+                logger.warning(f"문서를 찾을 수 없거나 이미 인덱싱됨: {doc_id}")
+                await conn.close()
+                return False
+            
+            # 문서 청킹 (간단한 예제 - 실제로는 더 정교한 청킹 필요)
+            title = doc["title"] or ""
+            content = doc["content"]
+            
+            # 전체 문서를 하나의 청크로 처리
+            chunk_text = f"{title}\n\n{content}"
+            
+            # 임베딩 생성
+            embedding = self.embedding_generator.generate_embedding(chunk_text)
+            
+            # Milvus에 저장
+            data = [{
+                "id": doc_id * 1000,  # 고유 ID (문서 ID * 1000)
+                "vector": embedding,
+                "product_id": doc_id,
+                "product_name": title,
+                "chunk_type": "manual_document",
+                "content": chunk_text[:1000],  # 최대 1000자
+                "source": f"manual_doc_{doc_id}"
+            }]
+            
+            self.collection.insert(data)
+            self.collection.flush()
+            
+            # PostgreSQL에서 인덱싱 완료로 표시
+            update_query = "UPDATE documents SET indexed = true, indexed_at = NOW() WHERE id = $1"
+            await conn.execute(update_query, doc_id)
+            
+            await conn.close()
+            logger.info(f"✅ 문서 인덱싱 완료: ID={doc_id}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"문서 인덱싱 실패 (doc_id: {doc_id}): {str(e)}")
+            return False
+
+    async def delete_document_vectors(self, doc_id: int) -> bool:
+        """Milvus에서 특정 문서의 모든 벡터 삭제"""
+        try:
+            # 해당 문서의 모든 벡터 삭제
+            expr = f"product_id == {doc_id}"
+            self.collection.delete(expr)
+            self.collection.flush()
+            
+            logger.info(f"✅ Milvus 벡터 삭제 완료: doc_id={doc_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Milvus 벡터 삭제 실패 (doc_id: {doc_id}): {str(e)}")
+            return False
+
+    async def delete_document(self, doc_id: int) -> bool:
+        """PostgreSQL에서 문서 삭제"""
+        try:
+            conn = await self._get_postgres_connection()
+            
+            # 문서 삭제
+            query = "DELETE FROM documents WHERE id = $1"
+            result = await conn.execute(query, doc_id)
+            
+            await conn.close()
+            
+            # 삭제된 행 수 확인
+            if result == "DELETE 1":
+                logger.info(f"✅ PostgreSQL 문서 삭제 완료: ID={doc_id}")
+                return True
+            else:
+                logger.warning(f"⚠️ 삭제할 문서 없음: ID={doc_id}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"PostgreSQL 문서 삭제 실패 (doc_id: {doc_id}): {str(e)}")
+            return False
