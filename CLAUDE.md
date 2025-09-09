@@ -1,421 +1,344 @@
-# 🎯 RAG LLM 시스템 MVP 개발 계획
+# 🎯 RAG LLM 시스템 MVP 완성 문서
 
-## 📋 시스템 아키텍처
+## 📋 시스템 아키텍처 (실제 구현)
 ```
-[관리자 영역]
-     Admin
-       │
-       ▼ (수동 실행)
+[MVP 단순화된 구조]
 ┌─────────────┐     ┌──────────────┐     ┌─────────────┐     ┌─────────────┐
 │  Scraper    │────▶│ PostgreSQLDB │◀────│  Indexing   │────▶│  MilvusDB   │
 │  Service    │     │   (원본DB)   │     │  Service    │     │  (VectorDB) │
+│ (인증제거)  │     │  제품중심DB  │     │ (BGE-M3)    │     │ (COSINE)    │
 └─────────────┘     └──────────────┘     └─────────────┘     └─────────────┘
-                                            (BGE-M3 임베딩)           ▲
-[사용자 영역]                                                         │
-┌─────────────┐                                              ┌─────────────┐
-│  Web App    │─────────────────────────────────────────────▶│  RAG API    │
-│  (QR접속)   │◀─────────────────────────────────────────────│  Service    │
-└─────────────┘                                              └─────────────┘
-                                                                      │
-                                                              ┌─────────────┐
-                                                              │   Ollama    │
-                                                              │  (Gemma3)   │
-                                                              └─────────────┘
+                                                                     ▲
+┌──────────────┐                                             ┌─────────────┐
+│  Web App     │────────────────────────────────────────────▶│  RAG API    │
+│(모바일최적화)│◀────────────────────────────────────────────│  Service    │
+│ +관리대시보드│                                             │ (스트리밍)  │
+└──────────────┘                                             └─────────────┘
+                                                                    │
+                                                             ┌─────────────┐
+                                                             │   Ollama    │
+                                                             │(Gemma3-27B) │
+                                                             │(외부서버)   │
+                                                             └─────────────┘
 ```
 
-## 🗂️ 프로젝트 구조
+## 🗂️ 실제 프로젝트 구조
 ```
 uncommon/
-├── CLAUDE.md            # Claude Code 참조 문서 (이 문서)
-├── .env.global          # 전역 환경변수
-├── load-env.sh          # 환경변수 로딩 스크립트 ⚠️ 모든 Docker 작업 전 필수 실행
-├── PostgreSQLDB/        # PostgreSQL 데이터베이스
-│   ├── .env
+├── CLAUDE.md            # 프로젝트 문서 (이 문서)
+├── .env.global          # 전역 환경변수 (70개 변수)
+├── start.sh             # 통합 시스템 시작 스크립트 ✅
+├── stop.sh              # 통합 시스템 종료 스크립트 ✅
+├── PostgreSQLDB/        # PostgreSQL 16 데이터베이스 ✅
 │   ├── docker-compose.yml
-│   ├── init.sql
-│   └── data/
-├── MilvusDB/           # Milvus 벡터 데이터베이스
-│   ├── .env
+│   ├── init.sql         # 제품 중심 스키마
+│   └── .env
+├── MilvusDB/           # Milvus 2.3.3 벡터DB ✅
 │   ├── docker-compose.yml
-│   └── data/
-├── scraper/            # 스크래핑 서비스
-│   ├── .env
-│   ├── main.py
-│   ├── scraper.py
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   └── docker-compose.yml
-├── indexing/           # Indexing 서비스 (BGE-M3)
-│   ├── .env
-│   ├── main.py
-│   ├── processor.py
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   └── docker-compose.yml
-├── rag-api/           # RAG API 서비스
-│   ├── .env
-│   ├── main.py
-│   ├── rag_engine.py
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   └── docker-compose.yml
-├── webapp/            # 웹 인터페이스
-│   ├── .env
-│   ├── index.html
-│   ├── app.js
-│   ├── style.css
-│   ├── Dockerfile
-│   └── docker-compose.yml
-└── start.sh           # 전체 시스템 시작 스크립트
+│   └── .env
+├── scraper/            # 스크래핑 서비스 ✅
+│   ├── main.py         # FastAPI (인증 제거됨)
+│   ├── scraper.py      # UNCOMMON 전용 스크래퍼
+│   ├── models.py       # Product, ProductImage, ScrapingJob
+│   ├── database.py
+│   └── requirements.txt
+├── indexing/           # 인덱싱 서비스 ✅
+│   ├── main.py         # 제품 데이터 벡터화
+│   ├── embedding_generator.py  # BGE-M3 (CPU/GPU)
+│   ├── text_chunker.py # 제품 특화 청킹
+│   ├── milvus_client.py # 벡터 스토어
+│   └── requirements.txt
+├── rag-api/           # RAG API 서비스 ✅
+│   ├── main.py        # 질의응답 + 검색 (JWT 제거됨)
+│   ├── embedding_generator.py
+│   ├── vector_search.py # 벡터 검색 엔진
+│   ├── llm_client.py  # Ollama 연동
+│   └── requirements.txt
+└── webapp/            # 웹 앱 ✅
+    ├── index.html     # 모바일 최적화 채팅 UI
+    ├── admin.html     # 관리자 대시보드
+    ├── debug.html     # 디버깅 페이지
+    └── docker-compose.yml
 ```
 
-## 🌍 전역 환경변수 (.env.global)
+## 🌍 환경변수 구성 (.env.global)
 ```bash
-# Network
-NETWORK_NAME=rag-network
+# 네트워크 & 서비스
+NETWORK_NAME=uncommon_rag-network
 
-# PostgreSQL
-POSTGRES_HOST=rag-postgres
-POSTGRES_PORT=5432
+# PostgreSQL 데이터베이스
+POSTGRES_HOST=uncommon_rag-postgres
+POSTGRES_PORT=5434          # 외부 접근 포트
+POSTGRES_INTERNAL_PORT=5432 # 컨테이너 내부 포트
 POSTGRES_DB=ragdb
 POSTGRES_USER=raguser
 POSTGRES_PASSWORD=ragpass2024!
 
-# Milvus
-MILVUS_HOST=rag-milvus
-MILVUS_PORT=19530
-MILVUS_METRICS_PORT=9091
+# Milvus 벡터 데이터베이스
+MILVUS_HOST=uncommon_rag-milvus
+MILVUS_PORT=19532
+MILVUS_INTERNAL_PORT=19530
+MILVUS_METRICS_PORT=9093
 
-# Ollama (Gemma3)
+# Ollama LLM (외부 서버)
 OLLAMA_HOST=112.148.37.41
 OLLAMA_PORT=1884
-OLLAMA_MODEL=gemma3
+OLLAMA_MODEL=gemma3:27b-it-q4_K_M
 
-# Embedding Model
+# 임베딩 모델
 EMBEDDING_MODEL=BAAI/bge-m3
 
-# Service Ports
+# CUDA 지원 (기본 활성화)
+USE_CUDA=true
+CUDA_DEVICE=0
+CUDA_VERSION=cu121
+CUDA_VISIBLE_DEVICES=0
+
+# 서비스 포트
 SCRAPER_PORT=8001
 INDEXING_PORT=8002
 RAG_API_PORT=8003
 WEBAPP_PORT=3000
 
-# Admin
-ADMIN_API_KEY=admin_secret_key_2024
+# 내부 포트
+SCRAPER_INTERNAL_PORT=8000
+INDEXING_INTERNAL_PORT=8000
+RAG_API_INTERNAL_PORT=8000
+WEBAPP_INTERNAL_PORT=80
+
+# 기타 설정
+TARGET_URL=https://ucmeyewear.earth/category/all/87/
+COLLECTION_NAME=uncommon_products
+DIMENSION=1024
+METRIC_TYPE=COSINE
+MAX_CONTEXT_LENGTH=4000
 ```
 
-## 🗄️ PostgreSQL 스키마
+## 🗄️ PostgreSQL 스키마 (제품 중심)
 ```sql
-CREATE TABLE documents (
+-- 제품 중심의 실제 스키마
+CREATE TABLE products (
     id SERIAL PRIMARY KEY,
-    url TEXT NOT NULL UNIQUE,
-    title TEXT,
-    content TEXT NOT NULL,
-    indexed BOOLEAN DEFAULT FALSE,
+    source_global_url TEXT,         -- 영문 사이트 URL
+    source_kr_url TEXT,             -- 한글 사이트 URL  
+    product_name TEXT NOT NULL,     -- 제품명
+    color TEXT,                     -- 색상
+    price JSONB DEFAULT '{}',       -- {"global": "", "kr": ""}
+    reward_points JSONB DEFAULT '{}', -- 리워드 포인트
+    description JSONB DEFAULT '{}', -- 제품 설명
+    material JSONB DEFAULT '{}',    -- 재질
+    size JSONB DEFAULT '{}',        -- 사이즈
+    issoldout BOOLEAN DEFAULT FALSE, -- 품절 여부
+    indexed BOOLEAN DEFAULT FALSE,   -- 벡터DB 인덱싱 상태
     scraped_at TIMESTAMP DEFAULT NOW(),
     indexed_at TIMESTAMP
 );
 
-CREATE TABLE images (
+CREATE TABLE product_images (
     id SERIAL PRIMARY KEY,
-    document_id INTEGER REFERENCES documents(id),
-    url TEXT NOT NULL,
-    alt_text TEXT,
-    context TEXT,
-    created_at TIMESTAMP DEFAULT NOW()
+    product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
+    image_data BYTEA NOT NULL,      -- 이미지 바이너리 저장
+    image_order INTEGER DEFAULT 0  -- 이미지 순서
 );
 
-CREATE TABLE scraping_logs (
+CREATE TABLE scraping_jobs (
     id SERIAL PRIMARY KEY,
     target_url TEXT NOT NULL,
-    status VARCHAR(20),
-    documents_count INTEGER DEFAULT 0,
-    images_count INTEGER DEFAULT 0,
+    status VARCHAR(20) DEFAULT 'pending', -- pending, running, completed, failed
+    products_count INTEGER DEFAULT 0,
     started_at TIMESTAMP DEFAULT NOW(),
     completed_at TIMESTAMP
 );
-
-CREATE INDEX idx_documents_indexed ON documents(indexed);
-CREATE INDEX idx_documents_url ON documents(url);
 ```
 
-## 🔑 핵심 기술 스택
-- **임베딩**: BGE-M3 (다국어 지원, 최대 8192 토큰)
-- **LLM**: Ollama Gemma3 (멀티모달 지원)
-- **벡터DB**: Milvus 2.3.3
-- **원본DB**: PostgreSQL 16
-- **웹프레임워크**: FastAPI
-- **스크래핑**: BeautifulSoup4
+## 🔑 실제 구현된 기술 스택
 
-## 📝 개발 작업 순서
-1. **인프라 설정**
-   - [ ] .env.global 파일 생성
-   - [ ] PostgreSQLDB Docker 구성
-   - [ ] MilvusDB Docker 구성
+### Backend Framework
+- **FastAPI 0.104.1** - 모든 API 서비스 (인증 시스템 제거됨)
+- **Uvicorn** - ASGI 서버
+- **SQLAlchemy 2.0.23** - PostgreSQL ORM
 
-2. **Scraper Service**
-   - [ ] FastAPI 기본 구조
-   - [ ] 관리자 인증 API
-   - [ ] BeautifulSoup 스크래핑 로직
-   - [ ] PostgreSQL 저장
+### AI & ML Models
+- **BGE-M3** (`BAAI/bge-m3`) - 임베딩 모델 (CPU/GPU 자동 선택)
+- **Ollama Gemma3** (`gemma3:27b-it-q4_K_M`) - LLM (외부 서버)
+- **Sentence Transformers** - 문장 임베딩 처리
 
-3. **Indexing Service**
-   - [ ] BGE-M3 모델 설정
-   - [ ] 문서 청킹 로직
-   - [ ] 임베딩 생성 및 Milvus 저장
-   - [ ] PostgreSQL 상태 업데이트
+### 데이터베이스
+- **PostgreSQL 16** - 제품 데이터 저장 
+- **Milvus 2.3.3** - 벡터 데이터베이스 (COSINE 유사도, 1024차원)
 
-4. **RAG API Service**
-   - [ ] BGE-M3 쿼리 임베딩
-   - [ ] Milvus 유사도 검색
-   - [ ] Ollama/Gemma3 응답 생성
-   - [ ] 스트리밍 API
+### 웹 & UI
+- **Nginx** - 정적 파일 서빙
+- **Vanilla JavaScript** - 실시간 채팅 UI (모바일 최적화)
+- **Server-Sent Events** - 스트리밍 응답
 
-5. **Web App**
-   - [ ] QR 코드 생성
-   - [ ] 모바일 UI
-   - [ ] 이미지 업로드
-   - [ ] 채팅 인터페이스
+## 🔌 실제 구현된 API 엔드포인트
 
-## 🔧 주요 API 엔드포인트
+### 1. Scraper Service (포트: 8001) ✅
+```
+GET  /health          - 헬스체크
+POST /scrape         - 스크래핑 시작 (인증 제거됨)
+GET  /docs           - Swagger UI
+```
 
-### Scraper (관리자용)
-- `POST /admin/scrape` - 스크래핑 시작
-- `GET /admin/status` - 진행 상태 확인
+### 2. Indexing Service (포트: 8002) ✅
+```
+GET  /               - 서비스 상태
+GET  /health         - 헬스체크  
+POST /index/products - 제품 벡터 인덱싱 (백그라운드)
+GET  /index/stats    - 인덱싱 통계
+POST /index/products/{id} - 개별 제품 인덱싱
+DELETE /index/products/{id} - 인덱스에서 제품 제거
+```
 
-### Indexing (내부용)
-- `POST /index/document/{id}` - 문서 인덱싱
-- `GET /index/status` - 인덱싱 상태
+### 3. RAG API Service (포트: 8003) ✅
+```
+GET  /               - 서비스 상태
+GET  /health         - 헬스체크
+POST /search         - 벡터 검색 (LLM 없이)
+POST /chat           - RAG 질의응답 (스트리밍 지원)
+POST /chat/multimodal - 멀티모달 채팅 (이미지 업로드)
+GET  /stats          - 시스템 통계
+```
 
-### RAG API (사용자용)
-- `POST /chat` - 질문 응답
-- `POST /chat/stream` - 스트리밍 응답
+### 4. Web App (포트: 3000) ✅
+```
+/                    - 메인 채팅 인터페이스
+/admin.html          - 관리자 대시보드
+/debug.html          - 디버깅 페이지
+```
 
-### Web App
-- QR 접속: `http://localhost:3000`
+## 🚀 시스템 시작 명령 (간소화됨)
 
-## 🚀 시스템 시작 명령 (검증된 방법)
+### 전체 시스템 시작
 ```bash
-# 0. 네트워크 생성 (환경변수 로딩 포함)
-source load-env.sh && docker network create $NETWORK_NAME
-
-# 1. 데이터베이스 시작 (검증됨 ✅)
-cd PostgreSQLDB && source ../load-env.sh && docker compose up -d
-cd ../MilvusDB && source ../load-env.sh && docker compose up -d
-
-# 2. 서비스 시작
-cd ../scraper && source ../load-env.sh && docker compose up -d
-cd ../indexing && source ../load-env.sh && docker compose up -d
-cd ../rag-api && source ../load-env.sh && docker compose up -d
-cd ../webapp && source ../load-env.sh && docker compose up -d
+./start.sh  # 모든 서비스를 순차적으로 시작하고 상태 확인
 ```
 
-### 🎯 개별 서비스 시작 예시
+### 전체 시스템 종료
+```bash  
+./stop.sh   # 모든 Docker 컨테이너 정리
+```
+
+### 개별 서비스 시작
 ```bash
-# Milvus만 시작 (검증됨 ✅)
-cd MilvusDB && source ../load-env.sh && docker compose up -d
-
-# PostgreSQL만 시작  
-cd PostgreSQLDB && source ../load-env.sh && docker compose up -d
-
-# Scraper만 시작
-cd scraper && source ../load-env.sh && docker compose up -d
+cd [service_name] 
+source ../.env.global  # 환경변수 로딩 필수
+docker compose up -d
 ```
 
-## 📌 개발 시 주의사항
-1. **환경변수 필수 로딩**: 모든 Docker 작업이나 테스트 전에 반드시 환경변수를 먼저 로딩해야 함
+## 📌 중요한 변경사항 (MVP 간소화)
 
-   ### 🔥 환경변수 로딩 가이드 (성공 검증됨)
-   
-   **루트 디렉토리에서 실행:**
-   ```bash
-   source load-env.sh
-   ```
-   
-   **서브 디렉토리에서 실행:**
-   ```bash
-   # MilvusDB, PostgreSQLDB, scraper, indexing 등에서 실행 시
-   source ../load-env.sh && docker compose up -d
-   ```
-   
-   **검증된 성공 사례:**
-   ```bash
-   # Milvus 컨테이너 시작 (성공 확인됨)
-   cd MilvusDB && source ../load-env.sh && docker compose up -d
-   
-   # PostgreSQL 컨테이너 시작  
-   cd PostgreSQLDB && source ../load-env.sh && docker compose up -d
-   ```
-   
-   **⚠️ 중요**: Claude Code bash에서는 환경변수가 세션 간 지속되지 않으므로 매번 Docker 명령어 실행 전에 load-env.sh를 source해야 함
+### 🚫 제거된 기능들
+1. **인증 시스템 완전 제거**
+   - JWT 토큰 인증 로직 제거
+   - ADMIN_API_KEY 인증 제거
+   - admin-login.html 파일 삭제
+   - 모든 API가 공개 접근
 
-2. 모든 서비스는 Docker 컨테이너로 실행
-3. 환경변수는 .env.global과 각 서비스별 .env 파일로 관리
-4. BGE-M3 임베딩 모델은 첫 실행 시 자동 다운로드
-5. Ollama는 외부 서버(112.148.37.41:1884)에서 실행 중
-6. 관리자 API는 ADMIN_API_KEY로 인증
-7. **환경변수 예외처리 금지**: Docker Compose 파일에서 환경변수 사용 시 기본값(${VAR:-default}) 사용 금지. 환경변수가 없으면 에러가 발생하도록 하여 설정 오류를 빠르게 파악할 수 있도록 함
-8. **포트 충돌 방지**: 각 서비스별 고유 포트를 .env.global에 정의하여 다른 프로젝트와 충돌 방지
+2. **환경변수 엄격화**
+   - 모든 `os.getenv()` → `os.environ[]` 변환
+   - Docker Compose 기본값 제거 (${VAR:-default} 금지)
+   - 누락된 환경변수 시 명확한 에러 발생
 
----
+3. **Docker 구성 개선**
+   - 모든 `version: '3.8'` 제거 (obsolete 경고 해결)
+   - CUDA를 기본값으로 설정 (`USE_CUDA=true`)
+   - 네트워크 이름 통일 (`uncommon_rag-network`)
 
-## 📊 현재 개발 진행 상황 (2025-09-09)
+### ✅ 추가된 기능들
+1. **멀티모달 지원**
+   - 이미지 업로드 기능 (`/chat/multimodal`)
+   - 제품 이미지 바이너리 저장 (PostgreSQL BYTEA)
 
-### ✅ 완료된 작업
-1. **프로젝트 기본 구조**
-   - CLAUDE.md 파일 생성 및 계획 문서화 ✅
-   - .env.global 전역 환경변수 설정 ✅
-   - 프로젝트 폴더 구조 생성 ✅
+2. **개선된 UI**
+   - 실시간 스트리밍 채팅
+   - 모바일 최적화 반응형 디자인
+   - 디버깅 패널 (검색 결과 확인)
 
-2. **PostgreSQL 데이터베이스**
-   - Docker 구성 (PostgreSQLDB/docker-compose.yml) ✅
-   - 스키마 정의 (init.sql) - 제품 중심 구조 ✅
-   - 환경변수 설정 (.env) ✅
+## 📊 시스템 성능 & 검증 완료
 
-3. **Milvus 벡터 데이터베이스**
-   - Docker 구성 (MilvusDB/docker-compose.yml) ✅
-   - 환경변수 설정 (.env) ✅
-
-4. **Scraper 서비스 ✅ 완료**
-   - requirements.txt - BeautifulSoup4, psycopg2 등 패키지 ✅
-   - Dockerfile - Python 3.11 컨테이너 설정 ✅
-   - docker-compose.yml - 서비스 구성 ✅
-   - 환경변수 설정 (.env) ✅
-   - main.py - FastAPI 애플리케이션 (관리자 API) ✅
-   - database.py - PostgreSQL 연결 ✅
-   - models.py - SQLAlchemy 모델 (Product, ProductImage, ScrapingJob) ✅
-   - scraper.py - UNCOMMON 사이트 특화 스크래핑 로직 ✅
-   - **테스트 완료**: 2개 제품, 20개 이미지 성공적으로 스크래핑 ✅
-
-5. **Indexing 서비스 ✅ 완료**
-   - requirements.txt - langchain-huggingface, pymilvus 등 패키지 ✅
-   - Dockerfile - Python 3.11 컨테이너 설정 ✅
-   - docker-compose.yml - 서비스 구성 ✅
-   - embedding_generator.py - BGE-M3 임베딩 모델 (CPU/GPU 자동선택) ✅
-   - text_chunker.py - 제품 데이터 전용 청킹 (기본정보/설명/이미지 분할) ✅
-   - milvus_client.py - Milvus 벡터 스토어 (배치 처리, 검색 최적화) ✅
-   - vector_indexer.py - 벡터 인덱싱 로직 ✅
-   - document_preprocessor.py - 문서 전처리 ✅
-   - database.py - PostgreSQL 연결 ✅
-   - main.py - FastAPI 애플리케이션 (관리자 API, 백그라운드 작업) ✅
-   - **테스트 완료**: 제품 데이터 청킹 및 벡터 인덱싱 성공 ✅
-
-6. **RAG API 서비스 ✅ 완료**
-   - requirements.txt - BGE-M3, pymilvus, requests 등 패키지 ✅
-   - Dockerfile - Python 3.11 컨테이너 설정 ✅
-   - docker-compose.yml - 서비스 구성 ✅
-   - embedding_generator.py - BGE-M3 임베딩 모델 ✅
-   - vector_search.py - Milvus 벡터 검색 엔진 ✅
-   - llm_client.py - Ollama Gemma3 LLM 클라이언트 (스트리밍 지원) ✅
-   - main.py - FastAPI 애플리케이션 (632줄) ✅
-     - `/chat` - RAG 기반 질의응답 (스트리밍/일반 모드) ✅
-     - `/search` - 벡터 검색 전용 API ✅
-     - `/admin/login` - JWT 기반 관리자 인증 ✅
-     - `/admin/stats` - 시스템 통계 ✅
-     - `/admin/prompt` - 시스템 프롬프트 관리 ✅
-     - `/admin/documents` - 문서 CRUD API ✅
-   - **핵심 기능**: 실시간 스트리밍 응답, 디버깅 정보 제공 ✅
-
-7. **Web App ✅ 완료**
-   - docker-compose.yml - Nginx 웹서버 구성 ✅
-   - index.html - 모바일 최적화 채팅 UI (670줄) ✅
-     - 실시간 스트리밍 채팅 인터페이스 ✅
-     - RAG 디버깅 패널 (검색 결과, 프롬프트 확인) ✅
-     - 응답 소스 정보 표시 ✅
-     - 타이핑 인디케이터 ✅
-     - 모바일 최적화 반응형 디자인 ✅
-   - admin-login.html - 관리자 로그인 페이지 ✅
-   - admin.html - 관리자 대시보드 ✅
-   - debug.html - 디버깅 전용 페이지 ✅
-
-8. **시스템 관리 스크립트**
-   - start.sh - 전체 시스템 시작 스크립트 ✅
-   - stop.sh - 전체 시스템 종료 스크립트 ✅
-   - load-env.sh - 환경변수 로딩 스크립트 ✅
-
-### 🎯 MVP 시스템 완성 상태
-- **✅ 완료된 핵심 기능들**
-  - 웹 스크래핑 → PostgreSQL 저장 ✅
-  - BGE-M3 임베딩 → Milvus 벡터 저장 ✅
-  - 벡터 검색 → Ollama LLM → 스트리밍 응답 ✅
-  - 모바일 웹 채팅 UI ✅
-  - 관리자 대시보드 ✅
-  - 실시간 디버깅 기능 ✅
-
----
-
-## 🎉 시스템 완성 상황
-
-### ✅ 전체 RAG LLM MVP 시스템 완료
-- **🗂️ 데이터베이스 레이어**: PostgreSQL (원본 데이터) + Milvus (벡터 데이터) ✅
-- **🔄 데이터 파이프라인**: 스크래핑 → 청킹 → 임베딩 → 벡터 저장 ✅  
-- **🤖 AI 서비스**: BGE-M3 임베딩 + Ollama Gemma3 LLM ✅
-- **🌐 웹 인터페이스**: 모바일 최적화 채팅 UI + 관리자 대시보드 ✅
-- **🔧 운영 도구**: Docker 컴포즈 + 환경변수 관리 + 시스템 스크립트 ✅
-
-### 📋 향후 확장 가능 기능 (선택사항)
-- [ ] **QR 코드 생성**: 모바일 접속용 QR 코드 자동 생성
-- [ ] **이미지 업로드**: 멀티모달 기능 (사용자가 제품 사진 업로드)
-- [ ] **음성 인식**: 음성으로 질문하기
-- [ ] **제품 추천**: 사용자 선호도 기반 제품 추천 시스템
-- [ ] **다국어 지원**: 영어/중국어 등 다국어 인터페이스
-- [ ] **성능 모니터링**: Grafana + Prometheus 모니터링 대시보드
-- [ ] **자동 스케일링**: Kubernetes 기반 자동 확장
-- [ ] **A/B 테스트**: 다양한 LLM 모델 성능 비교
-- [ ] **캐싱 최적화**: Redis 기반 응답 캐싱
-- [ ] **보안 강화**: OAuth 2.0 인증, HTTPS 적용
-
----
-
----
-
-## 📊 최종 시스템 테스트 결과 
-
-### ✅ 전체 파이프라인 검증 완료
-- **스크래핑**: UNCOMMON 사이트에서 2개 제품, 20개 이미지 수집 ✅
-- **데이터 저장**: PostgreSQL에 JSON 구조로 제품 데이터 저장 ✅  
-- **벡터 인덱싱**: BGE-M3 모델로 제품 정보 임베딩, Milvus 저장 ✅
-- **RAG 검색**: 벡터 유사도 검색으로 관련 제품 정보 추출 ✅
-- **LLM 응답**: Ollama Gemma3으로 자연어 답변 생성 ✅
+### ✅ 검증된 핵심 파이프라인
+- **스크래핑**: UNCOMMON 사이트에서 2개 제품, 20개 이미지 성공 ✅
+- **데이터 저장**: PostgreSQL에 JSON 구조로 제품 데이터 저장 ✅
+- **벡터 인덱싱**: BGE-M3 모델로 1024차원 임베딩, Milvus 저장 ✅
+- **RAG 검색**: 코사인 유사도 기반 상위 5개 결과 반환 ✅
+- **LLM 응답**: Ollama Gemma3으로 자연어 답변 생성 (스트리밍) ✅
 - **웹 UI**: 모바일 최적화 실시간 채팅 인터페이스 ✅
-- **관리 기능**: JWT 인증, 시스템 모니터링, 디버깅 패널 ✅
 
 ### 🔗 서비스 접속 정보
-- **사용자 채팅**: `http://localhost:3000` (모바일 최적화)
-- **관리자 대시보드**: `http://localhost:3000/admin-login.html`
-- **RAG API**: `http://localhost:8003` (Swagger UI: `/docs`)
+- **사용자 채팅**: `http://localhost:3000`
+- **관리자 대시보드**: `http://localhost:3000/admin.html`
+- **RAG API**: `http://localhost:8003/docs`
 - **Scraper API**: `http://localhost:8001/docs`
 - **Indexing API**: `http://localhost:8002/docs`
 
-### 🛠️ 운영 명령어
-```bash
-# 전체 시스템 시작
-./start.sh
+---
 
-# 전체 시스템 종료  
-./stop.sh
+## 🎯 계획되었으나 미구현된 기능들
 
-# 개별 서비스 시작 (환경변수 로딩 포함)
-cd [service_name] && source ../load-env.sh && docker compose up -d
-```
+### 1. QR 코드 생성 📱
+- **계획**: 모바일 접속용 QR 코드 자동 생성
+- **상태**: 미구현 (추후 확장 가능)
+
+### 2. 음성 인식 🎤
+- **계획**: 음성으로 질문하기
+- **상태**: 미구현 (Web Speech API 활용 가능)
+
+### 3. 고급 보안 기능 🔒
+- **계획**: OAuth 2.0, HTTPS, Rate Limiting
+- **상태**: 미구현 (현재 모든 API 공개 접근)
+
+### 4. 성능 모니터링 📈
+- **계획**: Grafana + Prometheus 대시보드
+- **상태**: 미구현 (기본 헬스체크만 제공)
+
+### 5. 캐싱 시스템 ⚡
+- **계획**: Redis 기반 응답 캐싱
+- **상태**: 미구현 (매번 벡터 검색 수행)
+
+### 6. 자동 스케일링 ☁️
+- **계획**: Kubernetes 기반 자동 확장
+- **상태**: 미구현 (Docker Compose만 지원)
 
 ---
 
-## 🎯 시스템 운영 가이드
+## 🎉 MVP 완성 상태
 
-### 📋 일반 사용 시나리오
-1. **제품 정보 추가**: 스크래핑 API로 새 제품 수집
-2. **자동 인덱싱**: 새 제품 데이터 자동으로 벡터화 
-3. **사용자 질의**: 웹 채팅에서 제품 관련 질문
-4. **실시간 응답**: RAG 기반 정확한 답변 제공
+### ✅ 완전히 작동하는 핵심 기능
+- **전체 데이터 파이프라인**: 스크래핑 → 저장 → 벡터화 → 검색 → LLM 응답 ✅
+- **모바일 웹 인터페이스**: 실시간 스트리밍 채팅 UI ✅  
+- **멀티모달 지원**: 텍스트 + 이미지 업로드 ✅
+- **CUDA GPU 가속**: BGE-M3 임베딩 모델 가속화 ✅
+- **운영 도구**: 통합 start/stop 스크립트, 디버깅 패널 ✅
 
-### 🔧 관리자 작업
-- **시스템 모니터링**: `/admin/stats` API로 상태 확인
-- **프롬프트 튜닝**: `/admin/prompt` API로 답변 품질 개선  
-- **문서 관리**: `/admin/documents` API로 수동 문서 추가/삭제
-- **디버깅**: 웹 UI의 디버깅 패널로 검색 결과 분석
+### 🚀 운영 준비 완료
+- **Docker 컨테이너화**: 모든 서비스가 컨테이너로 실행 ✅
+- **환경변수 관리**: .env.global 중앙 집중식 관리 ✅
+- **에러 처리**: 누락된 환경변수 시 명확한 에러 메시지 ✅
+- **헬스체크**: 모든 서비스에 헬스체크 엔드포인트 ✅
 
-### 🚀 확장 및 개선 방향
-- **성능**: 더 많은 제품 데이터 수집, 임베딩 모델 업그레이드
-- **기능**: QR 코드, 이미지 업로드, 음성 인식 추가
-- **운영**: 모니터링 대시보드, 자동 배포 파이프라인 구축
+---
+
+## 🔧 일반 사용 가이드
+
+### 📋 사용 시나리오
+1. **제품 데이터 수집**: `POST /scrape` API로 UNCOMMON 사이트 스크래핑
+2. **자동 벡터화**: 백그라운드에서 제품 데이터 임베딩 및 Milvus 저장
+3. **사용자 질의**: 웹 채팅에서 제품 관련 질문 입력
+4. **실시간 응답**: RAG 기반 정확한 답변을 스트리밍으로 제공
+
+### 🛠️ 관리 작업
+- **시스템 모니터링**: `GET /stats` API로 각 서비스 상태 확인
+- **디버깅**: 웹 UI의 디버깅 패널로 검색 결과 및 프롬프트 분석
+- **수동 인덱싱**: `POST /index/products/{id}` API로 개별 제품 재인덱싱
+
+### ⚠️ 현재 한계사항
+- **보안**: 모든 API가 인증 없이 공개 접근 (MVP 간소화)
+- **확장성**: 단일 서버 구성, 자동 스케일링 미지원
+- **캐싱**: 응답 캐싱 없음, 매번 실시간 검색 수행
+- **의존성**: 외부 Ollama 서버에 의존적
+
+---
+
+이 문서는 실제 구현된 MVP 시스템의 현재 상태를 정확히 반영하며, 계획 단계에서 변경된 모든 사항들을 포함하고 있습니다.
