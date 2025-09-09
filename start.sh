@@ -60,7 +60,8 @@ check_database() {
                 return 0
             fi
         elif [ "$db_type" = "Milvus" ]; then
-            if curl -s -f "http://localhost:${MILVUS_PORT}/health" > /dev/null 2>&1; then
+            # Milvus는 Docker 컨테이너 상태로 확인
+            if docker ps --filter "name=${container_name}" --filter "health=healthy" | grep -q "${container_name}"; then
                 echo "✅ $db_type 연결 성공"
                 return 0
             fi
@@ -77,8 +78,13 @@ display_header "1. 환경 설정"
 
 echo "📝 환경변수 로딩 중..."
 if [ -f ".env.global" ]; then
-    source ./load-env.sh
+    # .env.global 파일에서 환경변수를 로드하고 export
+    set -a  # 모든 변수를 자동으로 export
+    source .env.global
+    set +a  # export 자동화 해제
     echo "✅ 환경변수 로딩 완료"
+    echo "   - 네트워크: ${NETWORK_NAME}"
+    echo "   - 서비스 포트: Scraper(${SCRAPER_PORT}), Indexing(${INDEXING_PORT}), RAG-API(${RAG_API_PORT}), WebApp(${WEBAPP_PORT})"
 else
     echo "❌ .env.global 파일을 찾을 수 없습니다!"
     exit 1
@@ -92,13 +98,11 @@ display_header "2. 데이터베이스 서비스 시작"
 
 echo "🗄️ PostgreSQL 데이터베이스 시작..."
 cd PostgreSQLDB
-source ../load-env.sh
 docker compose up -d --build
 cd ..
 
 echo "📊 Milvus 벡터 데이터베이스 시작..."
 cd MilvusDB
-source ../load-env.sh  
 docker compose up -d --build
 cd ..
 
@@ -113,25 +117,21 @@ display_header "3. 애플리케이션 서비스 시작"
 
 echo "🔍 Scraper 서비스 시작..."
 cd scraper
-source ../load-env.sh
 docker compose up -d --build
 cd ..
 
 echo "🧠 Indexing 서비스 시작..."
 cd indexing
-source ../load-env.sh
 docker compose up -d --build
 cd ..
 
 echo "🤖 RAG API 서비스 시작..."
 cd rag-api
-source ../load-env.sh
 docker compose up -d --build
 cd ..
 
 echo "🌐 웹 애플리케이션 시작..."
 cd webapp
-source ../load-env.sh
 docker compose up -d --build
 cd ..
 

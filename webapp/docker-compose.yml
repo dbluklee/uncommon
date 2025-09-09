@@ -4,14 +4,17 @@ services:
   webapp:
     build: .
     container_name: uncommon_webapp
+    env_file:
+      - ../.env.global
+      - .env
     ports:
-      - "${WEBAPP_PORT:-3000}:80"
+      - "${WEBAPP_PORT}:${WEBAPP_INTERNAL_PORT}"
     networks:
-      - rag-network
+      - uncommon_rag-network
     # depends_on:
     #   - rag-api
 
 networks:
-  rag-network:
+  uncommon_rag-network:
     external: true
     name: ${NETWORK_NAME}

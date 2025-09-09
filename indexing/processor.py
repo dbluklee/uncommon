@@ -16,11 +16,11 @@ logger = logging.getLogger(__name__)
 
 class EmbeddingProcessor:
     def __init__(self):
-        self.model_name = os.getenv('EMBEDDING_MODEL', 'BAAI/bge-m3')
-        self.chunk_size = int(os.getenv('CHUNK_SIZE', '500'))
-        self.chunk_overlap = int(os.getenv('CHUNK_OVERLAP', '50'))
-        self.batch_size = int(os.getenv('EMBEDDING_BATCH_SIZE', '32'))
-        self.use_cuda = os.getenv('USE_CUDA', 'false').lower() == 'true'
+        self.model_name = os.environ['EMBEDDING_MODEL']
+        self.chunk_size = int(os.environ['CHUNK_SIZE'])
+        self.chunk_overlap = int(os.environ['CHUNK_OVERLAP'])
+        self.batch_size = int(os.environ['EMBEDDING_BATCH_SIZE'])
+        self.use_cuda = os.environ['USE_CUDA'].lower() == 'true'
         
         # Initialize model
         self.device = 'cuda' if self.use_cuda and torch.cuda.is_available() else 'cpu'

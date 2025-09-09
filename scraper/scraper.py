@@ -32,7 +32,7 @@ class ProductScraper:
         ]
         
         self._update_session_headers()
-        self.request_timeout = int(os.getenv('REQUEST_TIMEOUT', '30'))
+        self.request_timeout = int(os.environ['REQUEST_TIMEOUT'])
         
         # 요청 간격 설정 (IP 차단 방지)
         self.min_delay = 2  # 최소 2초 대기

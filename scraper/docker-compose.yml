@@ -13,13 +13,13 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       ADMIN_API_KEY: ${ADMIN_API_KEY}
     ports:
-      - "${SCRAPER_PORT}:8000"
+      - "${SCRAPER_PORT}:${SCRAPER_INTERNAL_PORT}"
     networks:
       - uncommon_rag-network
     restart: unless-stopped
 # PostgreSQL 의존성은 애플리케이션 레벨에서 재시도 로직으로 처리
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:${SCRAPER_INTERNAL_PORT}/health"]
       interval: 30s
       timeout: 10s
       retries: 3

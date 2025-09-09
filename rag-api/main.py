@@ -54,9 +54,9 @@ llm_client = None
 
 # 관리자 인증 설정
 security = HTTPBearer()
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD_HASH = hashlib.sha256(os.getenv("ADMIN_PASSWORD", "admin123").encode()).hexdigest()
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "uncommon_secret_key_2024")
+ADMIN_USERNAME = os.environ["ADMIN_USERNAME"]
+ADMIN_PASSWORD_HASH = hashlib.sha256(os.environ["ADMIN_PASSWORD"].encode()).hexdigest()
+JWT_SECRET_KEY = os.environ["JWT_SECRET_KEY"]
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 24
 
@@ -206,8 +206,8 @@ async def root():
         "service": "UNCOMMON RAG API Service",
         "status": "running",
         "version": "1.0.0",
-        "embedding_model": os.getenv("EMBEDDING_MODEL", "BGE-M3"),
-        "llm_model": os.getenv("OLLAMA_MODEL", "gemma3"),
+        "embedding_model": os.environ["EMBEDDING_MODEL"],
+        "llm_model": os.environ["OLLAMA_MODEL"],
         "vector_store": "Milvus"
     }
 
@@ -440,7 +440,7 @@ async def multimodal_chat(
 def _build_context(search_results: List[Dict]) -> str:
     """검색 결과로부터 컨텍스트 구성"""
     context_parts = []
-    max_length = int(os.getenv("MAX_CONTEXT_LENGTH", 4000))
+    max_length = int(os.environ["MAX_CONTEXT_LENGTH"])
     current_length = 0
     
     for i, result in enumerate(search_results, 1):
@@ -496,10 +496,10 @@ def _build_debug_info(query: str, search_results: List[Dict], context: str, requ
         "settings": {
             "top_k": request.top_k,
             "temperature": request.temperature,
-            "embedding_model": os.getenv("EMBEDDING_MODEL", "BGE-M3"),
-            "llm_model": os.getenv("OLLAMA_MODEL", "gemma3"),
+            "embedding_model": os.environ["EMBEDDING_MODEL"],
+            "llm_model": os.environ["OLLAMA_MODEL"],
             "stream": request.stream,
-            "max_context_length": int(os.getenv("MAX_CONTEXT_LENGTH", 4000))
+            "max_context_length": int(os.environ["MAX_CONTEXT_LENGTH"])
         }
     }
 
@@ -572,10 +572,10 @@ async def get_stats():
     try:
         stats = await vector_searcher.get_collection_stats()
         return {
-            "collection_name": os.getenv("COLLECTION_NAME", "uncommon_products"),
+            "collection_name": os.environ["COLLECTION_NAME"],
             "total_vectors": stats.get("row_count", 0),
-            "embedding_dim": int(os.getenv("DIMENSION", 1024)),
-            "metric_type": os.getenv("METRIC_TYPE", "COSINE")
+            "embedding_dim": int(os.environ["DIMENSION"]),
+            "metric_type": os.environ["METRIC_TYPE"]
         }
     except Exception as e:
         logger.error(f"통계 조회 실패: {str(e)}")
@@ -632,8 +632,8 @@ async def get_admin_stats():
             "indexed_documents": doc_stats.get("indexed_documents", 0),
             "pending_documents": doc_stats.get("pending_documents", 0),
             "last_update": doc_stats.get("last_update", "N/A"),
-            "collection_name": os.getenv("COLLECTION_NAME", "uncommon_products"),
-            "embedding_dim": int(os.getenv("DIMENSION", 1024)),
+            "collection_name": os.environ["COLLECTION_NAME"],
+            "embedding_dim": int(os.environ["DIMENSION"]),
             "system_status": "healthy"
         }
         
@@ -774,4 +774,5 @@ async def delete_admin_document(doc_id: int):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8003)
+    port = int(os.environ["RAG_API_INTERNAL_PORT"])
+    uvicorn.run(app, host="0.0.0.0", port=port)

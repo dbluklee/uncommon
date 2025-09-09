@@ -14,10 +14,10 @@ class VectorIndexer:
     """Milvus 벡터 인덱서"""
     
     def __init__(self):
-        self.host = os.getenv('MILVUS_HOST', 'localhost')
-        self.port = '19530'  # Milvus 내부 포트 (컨테이너 간 통신)
-        self.collection_name = 'product_embeddings'
-        self.dimension = 1024
+        self.host = os.environ['MILVUS_HOST']
+        self.port = os.environ['MILVUS_INTERNAL_PORT']
+        self.collection_name = os.environ['COLLECTION_NAME']
+        self.dimension = int(os.environ['DIMENSION'])
         
         self.connect()
         self.setup_collection()

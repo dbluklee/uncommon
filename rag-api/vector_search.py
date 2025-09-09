@@ -21,15 +21,15 @@ class VectorSearcher:
     def __init__(self, embedding_generator):
         """벡터 검색기 초기화"""
         self.embedding_generator = embedding_generator
-        self.collection_name = os.getenv("COLLECTION_NAME", "uncommon_products")
+        self.collection_name = os.environ["COLLECTION_NAME"]
         
         # PostgreSQL 연결 정보
         self.postgres_config = {
-            "host": os.getenv("POSTGRES_HOST", "localhost"),
-            "port": int(os.getenv("POSTGRES_PORT", "5432")),
-            "database": os.getenv("POSTGRES_DB", "ragdb"),
-            "user": os.getenv("POSTGRES_USER", "raguser"),
-            "password": os.getenv("POSTGRES_PASSWORD", "ragpass2024!")
+            "host": os.environ["POSTGRES_HOST"],
+            "port": int(os.environ["POSTGRES_PORT"]),
+            "database": os.environ["POSTGRES_DB"],
+            "user": os.environ["POSTGRES_USER"],
+            "password": os.environ["POSTGRES_PASSWORD"]
         }
         
         # Milvus 연결
@@ -41,8 +41,8 @@ class VectorSearcher:
     def _connect_milvus(self):
         """Milvus 서버 연결"""
         try:
-            milvus_host = os.getenv("MILVUS_HOST", "localhost")
-            milvus_port = os.getenv("MILVUS_INTERNAL_PORT", "19530")
+            milvus_host = os.environ["MILVUS_HOST"]
+            milvus_port = os.environ["MILVUS_INTERNAL_PORT"]
             
             logger.info(f"🔗 Milvus 연결 시도: {milvus_host}:{milvus_port}")
             

@@ -59,7 +59,7 @@ class StatsResponse(BaseModel):
 
 # 인증
 def verify_admin_key(x_api_key: str = Header(None)):
-    admin_key = os.getenv('ADMIN_API_KEY')
+    admin_key = os.environ['ADMIN_API_KEY']
     if not x_api_key or x_api_key != admin_key:
         raise HTTPException(status_code=401, detail="Invalid API key")
     return True
@@ -389,5 +389,5 @@ async def remove_product_from_index(
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv('INDEXING_PORT', 8002))
+    port = int(os.environ['INDEXING_INTERNAL_PORT'])
     uvicorn.run(app, host="0.0.0.0", port=port)

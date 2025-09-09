@@ -77,7 +77,7 @@ def get_bge_m3_model() -> HuggingFaceEmbeddings:
     """
     
     # USE_CUDA 환경변수 확인
-    use_cuda = os.getenv('USE_CUDA', 'false').lower() == 'true'
+    use_cuda = os.environ['USE_CUDA'].lower() == 'true'
     
     # 로컬 모델 경로 설정
     local_model_path = "/app/models/bge-m3"

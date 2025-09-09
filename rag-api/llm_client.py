@@ -21,9 +21,9 @@ class LLMClient:
     
     def __init__(self):
         """LLM 클라이언트 초기화"""
-        self.ollama_host = os.getenv("OLLAMA_HOST", "localhost")
-        self.ollama_port = os.getenv("OLLAMA_PORT", "11434")
-        self.model_name = os.getenv("OLLAMA_MODEL", "gemma3:27b-it-q4_K_M")
+        self.ollama_host = os.environ["OLLAMA_HOST"]
+        self.ollama_port = os.environ["OLLAMA_PORT"]
+        self.model_name = os.environ["OLLAMA_MODEL"]
         # Ensure we use the full model name
         if self.model_name == "gemma3":
             self.model_name = "gemma3:27b-it-q4_K_M"

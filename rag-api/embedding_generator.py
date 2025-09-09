@@ -17,12 +17,12 @@ class EmbeddingGenerator:
     
     def __init__(self):
         """임베딩 모델 초기화"""
-        self.model_name = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
-        self.use_cuda = os.getenv("USE_CUDA", "false").lower() == "true"
+        self.model_name = os.environ["EMBEDDING_MODEL"]
+        self.use_cuda = os.environ["USE_CUDA"].lower() == "true"
         
         # 디바이스 설정
         if self.use_cuda and torch.cuda.is_available():
-            self.device = f"cuda:{os.getenv('CUDA_DEVICE', '0')}"
+            self.device = f"cuda:{os.environ['CUDA_DEVICE']}"
             logger.info(f"🎮 CUDA 사용: {self.device}")
         else:
             self.device = "cpu"

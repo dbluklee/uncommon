@@ -21,9 +21,11 @@ app = FastAPI(
 security = HTTPBearer()
 
 # Environment variables
-ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "admin_secret_key_2024")
-TARGET_URL = os.getenv("TARGET_URL", "https://ucmeyewear.earth/category/all/87/")
-INDEXING_SERVICE_URL = os.getenv("INDEXING_SERVICE_URL", "http://rag-indexing:8000")
+ADMIN_API_KEY = os.environ["ADMIN_API_KEY"]
+TARGET_URL = os.environ["TARGET_URL"]
+INDEXING_SERVICE_HOST = os.environ["INDEXING_SERVICE_HOST"]
+INDEXING_SERVICE_PORT = os.environ["INDEXING_SERVICE_PORT"]
+INDEXING_SERVICE_URL = f"http://{INDEXING_SERVICE_HOST}:{INDEXING_SERVICE_PORT}"
 
 # Pydantic models
 class ScrapeRequest(BaseModel):
@@ -300,4 +302,5 @@ async def notify_indexing_service(products_count: int):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ["SCRAPER_INTERNAL_PORT"])
+    uvicorn.run(app, host="0.0.0.0", port=port)

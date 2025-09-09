@@ -18,6 +18,6 @@ COPY . .
 # Create model cache directory
 RUN mkdir -p /app/models
 
-EXPOSE 8003
+EXPOSE ${RAG_API_INTERNAL_PORT}
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8003", "--reload"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${RAG_API_INTERNAL_PORT} --reload"]
