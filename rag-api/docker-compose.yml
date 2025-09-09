@@ -1,7 +1,12 @@
 services:
   rag-api:
-    build: .
+    build:
+      context: .
+      args:
+        USE_CUDA: "true"
+        CUDA_VERSION: "cu121"
     container_name: uncommon_rag-api
+    runtime: nvidia
     deploy:
       resources:
         reservations:
