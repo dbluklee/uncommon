@@ -4,6 +4,13 @@ services:
   rag-api:
     build: .
     container_name: uncommon_rag-api
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     environment:
       - POSTGRES_HOST=${POSTGRES_HOST}
       - POSTGRES_PORT=${POSTGRES_INTERNAL_PORT}

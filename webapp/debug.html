@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RAG API 디버그 테스트</title>
+</head>
+<body>
+    <h1>RAG API 연결 테스트</h1>
+    <button onclick="testAPI()">API 테스트</button>
+    <div id="result"></div>
+    
+    <script>
+        async function testAPI() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '테스트 중...';
+            
+            try {
+                // 현재 호스트의 8013 포트로 테스트
+                const url = `http://${window.location.hostname}:8013/health`;
+                console.log('Testing URL:', url);
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <h3>✅ 성공!</h3>
+                    <p>URL: ${url}</p>
+                    <p>응답: ${JSON.stringify(data)}</p>
+                `;
+                
+                // 이제 채팅 API도 테스트
+                testChat();
+                
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <h3>❌ 오류</h3>
+                    <p>URL: http://${window.location.hostname}:8013/health</p>
+                    <p>오류: ${error.message}</p>
+                    <p>대안 URL들을 시도해보세요:</p>
+                    <ul>
+                        <li>http://localhost:8013</li>
+                        <li>http://127.0.0.1:8013</li>
+                        <li>http://192.168.50.40:8013</li>
+                    </ul>
+                `;
+            }
+        }
+        
+        async function testChat() {
+            try {
+                const url = `http://${window.location.hostname}:8013/chat`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: '안녕', stream: false })
+                });
+                
+                const data = await response.json();
+                document.getElementById('result').innerHTML += `
+                    <h3>✅ 채팅 API도 성공!</h3>
+                    <p>응답: ${data.answer.substring(0, 100)}...</p>
+                `;
+                
+            } catch (error) {
+                document.getElementById('result').innerHTML += `
+                    <h3>❌ 채팅 API 오류</h3>
+                    <p>오류: ${error.message}</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>

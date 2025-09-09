@@ -8,6 +8,7 @@ import logging
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import json
@@ -33,6 +34,15 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# CORS 미들웨어 추가
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 프로덕션에서는 특정 도메인만 허용
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # 전역 인스턴스
 embedding_generator = None
 vector_searcher = None
@@ -45,6 +55,7 @@ class ChatRequest(BaseModel):
     stream: Optional[bool] = True
     temperature: Optional[float] = 0.7
     include_images: Optional[bool] = False
+    include_debug: Optional[bool] = False
 
 class ChatResponse(BaseModel):
     answer: str
@@ -181,7 +192,7 @@ async def chat(request: ChatRequest):
             # 스트리밍 응답
             logger.info("📡 스트리밍 응답 시작")
             return StreamingResponse(
-                _stream_response(request.query, context, search_results, request.temperature),
+                _stream_response(request.query, context, search_results, request.temperature, request),
                 media_type="text/event-stream"
             )
         else:
@@ -199,11 +210,24 @@ async def chat(request: ChatRequest):
             logger.info(f"⏱️ LLM 응답 생성 완료: {llm_end - llm_start:.2f}초")
             logger.info(f"⏱️ 전체 처리 시간: {total_end - start_time:.2f}초")
             
-            return ChatResponse(
+            response_data = ChatResponse(
                 answer=answer,
                 sources=_format_sources(search_results),
                 query_embedding_dim=1024
             )
+            
+            # 디버깅 정보가 요청된 경우 추가
+            if request.include_debug:
+                debug_info = _build_debug_info(request.query, search_results, context, request)
+                # ChatResponse 모델에 debug_info 필드를 추가하거나, dict로 반환
+                return {
+                    "answer": answer,
+                    "sources": _format_sources(search_results),
+                    "query_embedding_dim": 1024,
+                    "debug_info": debug_info
+                }
+            
+            return response_data
             
     except Exception as e:
         logger.error(f"❌ 채팅 실패: {str(e)}")
@@ -249,11 +273,59 @@ def _format_sources(search_results: List[Dict]) -> List[Dict]:
         })
     return sources
 
-async def _stream_response(query: str, context: str, search_results: List[Dict], temperature: float):
+def _build_debug_info(query: str, search_results: List[Dict], context: str, request: ChatRequest) -> Dict[str, Any]:
+    """디버깅 정보 생성"""
+    return {
+        "query": query,
+        "search_results": [
+            {
+                "product_name": result.get("product_name", "Unknown"),
+                "chunk_type": result.get("chunk_type", "unknown"),
+                "content": result.get("content", "")[:500],  # 처음 500자만
+                "score": result.get("score", 0.0),
+                "product_id": result.get("product_id"),
+                "source": result.get("source", "")
+            }
+            for result in search_results
+        ],
+        "prompt": f"""다음은 UNCOMMON 안경 제품에 대한 정보를 기반으로 사용자의 질문에 답변하는 AI 어시스턴트입니다.
+
+사용자 질문: {query}
+
+관련 제품 정보:
+{context}
+
+위 정보를 바탕으로 사용자의 질문에 정확하고 도움이 되는 답변을 제공해주세요. 
+- 제품명, 가격, 특징을 구체적으로 언급해주세요
+- 한국어로 친근하게 답변해주세요
+- 정보가 불충분하다면 그 사실을 명시해주세요""",
+        "settings": {
+            "top_k": request.top_k,
+            "temperature": request.temperature,
+            "embedding_model": os.getenv("EMBEDDING_MODEL", "BGE-M3"),
+            "llm_model": os.getenv("OLLAMA_MODEL", "gemma3"),
+            "stream": request.stream,
+            "max_context_length": int(os.getenv("MAX_CONTEXT_LENGTH", 4000))
+        }
+    }
+
+async def _stream_response(query: str, context: str, search_results: List[Dict], temperature: float, request: ChatRequest = None):
     """스트리밍 응답 생성"""
     try:
-        # 스트리밍 시작 이벤트
-        yield f"data: {json.dumps({'type': 'start', 'sources': _format_sources(search_results)})}\n\n"
+        # 디버깅 정보 준비
+        debug_info = None
+        if request and request.include_debug:
+            debug_info = _build_debug_info(query, search_results, context, request)
+        
+        # 스트리밍 시작 이벤트 (디버깅 정보 포함)
+        start_data = {
+            'type': 'start', 
+            'sources': _format_sources(search_results)
+        }
+        if debug_info:
+            start_data['debug_info'] = debug_info
+        
+        yield f"data: {json.dumps(start_data)}\n\n"
         
         # LLM 스트리밍 응답
         async for chunk in llm_client.stream_generate(query, context, temperature):

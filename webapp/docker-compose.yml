@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  webapp:
+    build: .
+    container_name: uncommon_webapp
+    ports:
+      - "${WEBAPP_PORT:-3000}:80"
+    networks:
+      - rag-network
+    # depends_on:
+    #   - rag-api
+
+networks:
+  rag-network:
+    external: true
+    name: ${NETWORK_NAME}
