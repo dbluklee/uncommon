@@ -1,16 +1,17 @@
 """
 BGE-M3 임베딩 생성 모듈 - 안정화 버전
-langchain-huggingface를 사용한 BGE-M3 모델
+sentence-transformers를 직접 사용한 BGE-M3 모델
 """
 
 import torch
-from langchain_huggingface import HuggingFaceEmbeddings
+from sentence_transformers import SentenceTransformer
 import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import List, Dict, Any
 import logging
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ def verify_model_files(model_path: str) -> bool:
     
     return True
 
-def get_bge_m3_model() -> HuggingFaceEmbeddings:
+def get_bge_m3_model():
     """
     BGE-M3 임베딩 모델을 로드합니다.
     로컬 모델 우선, 없으면 자동으로 다운로드
@@ -124,15 +125,13 @@ def get_bge_m3_model() -> HuggingFaceEmbeddings:
     
     try:
         print(f"⏳ 임베딩 모델 로딩 중...")
-        embeddings = HuggingFaceEmbeddings(
-            model_name=model_name,
-            model_kwargs=model_kwargs,
-            encode_kwargs=encode_kwargs
-        )
+        
+        # sentence-transformers를 직접 사용
+        model = SentenceTransformer(model_name, device=device)
         
         # 로딩 성공 후 간단한 테스트
         print(f"🧪 모델 테스트 중...")
-        test_embedding = embeddings.embed_query("test")
+        test_embedding = model.encode("test", convert_to_numpy=True)
         embedding_dim = len(test_embedding)
         
         print(f"✅ 임베딩 모델 로딩 완료!")
@@ -140,7 +139,22 @@ def get_bge_m3_model() -> HuggingFaceEmbeddings:
         print(f"   🎯 디바이스: {device}")
         print(f"   📁 모델 경로: {model_name}")
         
-        return embeddings
+        # langchain 호환을 위한 래퍼 클래스
+        class SentenceTransformerWrapper:
+            def __init__(self, model):
+                self.model = model
+                
+            def embed_query(self, text: str) -> List[float]:
+                """단일 쿼리 임베딩"""
+                embedding = self.model.encode(text, convert_to_numpy=True, normalize_embeddings=True)
+                return embedding.tolist()
+                
+            def embed_documents(self, texts: List[str]) -> List[List[float]]:
+                """여러 문서 임베딩"""
+                embeddings = self.model.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
+                return embeddings.tolist()
+        
+        return SentenceTransformerWrapper(model)
         
     except Exception as e:
         error_msg = f"❌ 임베딩 모델 로딩 실패: {e}\n"

@@ -10,16 +10,15 @@ ENV PYTHONUNBUFFERED=1 \
 
 # 시스템 패키지 설치
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 \
-    python3.11-dev \
+    python3.10 \
+    python3.10-dev \
     python3-pip \
-    python3.11-venv \
+    python3.10-venv \
     build-essential \
     cmake \
     curl \
     wget \
     git \
-    && ln -s /usr/bin/python3.11 /usr/bin/python \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -39,14 +38,14 @@ RUN echo "=== Build Arguments ===" && \
     echo "CUDA_VERSION: $CUDA_VERSION" && \
     echo "======================="
 
-# PyTorch 설치 (CUDA 버전)
+# PyTorch 설치 (CUDA 버전만)
 RUN pip install --upgrade pip && \
     if [ "$USE_CUDA" = "true" ]; then \
-        echo "Installing CUDA version of PyTorch (cu121)..." && \
-        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121; \
+        echo "Installing CUDA version of PyTorch with cu121..." && \
+        pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 torchaudio==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121; \
     else \
         echo "Installing CPU version of PyTorch..." && \
-        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu; \
+        pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cpu; \
     fi
 
 # 나머지 패키지 설치

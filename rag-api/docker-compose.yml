@@ -3,8 +3,8 @@ services:
     build:
       context: .
       args:
-        USE_CUDA: "true"
-        CUDA_VERSION: "cu121"
+        USE_CUDA: ${USE_CUDA}
+        CUDA_VERSION: ${CUDA_VERSION}
     container_name: uncommon_rag-api
     runtime: nvidia
     deploy:

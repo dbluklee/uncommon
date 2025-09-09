@@ -15,16 +15,17 @@ python-dotenv                      # 환경변수 로딩
 langchain                          # LangChain 코어
 langchain-core                     # LangChain 핵심 추상화
 langchain-text-splitters          # 텍스트 분할 도구
-langchain-huggingface             # HuggingFace 통합
+# langchain-huggingface 제거 (sentence-transformers 직접 사용)
 langchain-milvus                  # Milvus 벡터 스토어
 
 # === 벡터 데이터베이스 ===
 pymilvus                          # Milvus Python SDK
 
 # === 임베딩 및 ML ===
-transformers                      # Transformer 모델 (BGE-M3)
-sentence-transformers            # 문장 임베딩
-huggingface_hub                   # HuggingFace Hub 통합
+# torch는 Dockerfile에서 직접 설치 (CUDA/CPU 버전 선택)
+transformers==4.35.2              # Transformer 모델 (BGE-M3) - PyTorch 2.5 호환
+sentence-transformers==2.2.2     # 문장 임베딩 - PyTorch 2.5 호환 
+huggingface_hub>=0.16.4,<0.17.0  # HuggingFace Hub 통합 - 호환 버전
 
 # === HTTP 클라이언트 ===
 requests                          # HTTP 요청

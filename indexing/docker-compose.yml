@@ -17,6 +17,9 @@ services:
       - PYTHONDONTWRITEBYTECODE=1
       - DEBIAN_FRONTEND=noninteractive
       - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}
+      - SAFETENSORS_FAST_GPU=1
+      - HUGGINGFACE_HUB_USE_SAFETENSORS=1
+      - TRANSFORMERS_USE_SAFETENSORS=1
     volumes:
       - ./models:/app/models
       - ./logs:/app/logs

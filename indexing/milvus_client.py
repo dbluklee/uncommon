@@ -8,7 +8,7 @@ from langchain_milvus import Milvus
 from langchain_core.vectorstores import VectorStoreRetriever
 from langchain_core.documents import Document
 from langchain.vectorstores.base import VectorStore
-from langchain_huggingface import HuggingFaceEmbeddings
+# from langchain_huggingface import HuggingFaceEmbeddings  # 제거됨
 from pymilvus import connections, utility, FieldSchema, CollectionSchema, DataType, Collection
 import os
 import logging
@@ -25,7 +25,7 @@ class ProductMilvusVectorStore(VectorStore):
     
     def __init__(self, 
                  collection_name: str = "uncommon_products",
-                 embedding_model: HuggingFaceEmbeddings = None,
+                 embedding_model = None,
                  metric_type: str = 'IP',
                  index_type: str = 'HNSW',
                  milvus_host: str = None,
@@ -312,7 +312,7 @@ class ProductMilvusVectorStore(VectorStore):
         return [(doc, doc.metadata.get('score', 0.0)) for doc in docs]
 
     @classmethod
-    def from_texts(cls, texts: List[str], embedding_model: HuggingFaceEmbeddings, metadatas: Optional[List[dict]] = None, **kwargs):
+    def from_texts(cls, texts: List[str], embedding_model, metadatas: Optional[List[dict]] = None, **kwargs):
         """텍스트 리스트로부터 벡터 스토어 생성"""
         vector_store = cls(embedding_model=embedding_model, **kwargs)
         vector_store.add_texts(texts, metadatas)
@@ -320,7 +320,7 @@ class ProductMilvusVectorStore(VectorStore):
         return vector_store
 
     @classmethod
-    def from_documents(cls, documents: List[Document], embedding_model: HuggingFaceEmbeddings, **kwargs):
+    def from_documents(cls, documents: List[Document], embedding_model, **kwargs):
         """Document 리스트로부터 벡터 스토어 생성"""
         vector_store = cls(embedding_model=embedding_model, **kwargs)
         vector_store.add_documents(documents)

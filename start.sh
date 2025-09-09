@@ -93,7 +93,7 @@ fi
 echo "📡 Docker 네트워크 생성..."
 docker network create ${NETWORK_NAME} 2>/dev/null && echo "✅ 네트워크 생성 완료" || echo "✅ 네트워크 이미 존재"
 
-# STEP 2: Database Services
+# STEP 2: Database Services (순차 실행)
 display_header "2. 데이터베이스 서비스 시작"
 
 echo "🗄️ PostgreSQL 데이터베이스 시작..."
@@ -101,18 +101,20 @@ cd PostgreSQLDB
 docker compose up -d --build
 cd ..
 
+echo "⏳ PostgreSQL 준비 완료 대기..."
+check_database "PostgreSQL" "${POSTGRES_HOST}"
+
 echo "📊 Milvus 벡터 데이터베이스 시작..."
 cd MilvusDB
 docker compose up -d --build
 cd ..
 
-wait_with_progress 20 "⏳ 데이터베이스 초기화 대기"
-
-# Check databases
-check_database "PostgreSQL" "${POSTGRES_HOST}"
+echo "⏳ Milvus 준비 완료 대기..."
 check_database "Milvus" "${MILVUS_HOST}"
 
-# STEP 3: Application Services
+echo "✅ 모든 데이터베이스 준비 완료"
+
+# STEP 3: Application Services (의존성 순서로 순차 실행)
 display_header "3. 애플리케이션 서비스 시작"
 
 echo "🔍 Scraper 서비스 시작..."
@@ -120,94 +122,116 @@ cd scraper
 docker compose up -d --build
 cd ..
 
+echo "⏳ Scraper 서비스 준비 완료 대기..."
+check_service_health "Scraper API" "${SCRAPER_PORT}"
+
 echo "🧠 Indexing 서비스 시작..."
 cd indexing
 docker compose up -d --build
 cd ..
+
+echo "⏳ Indexing 서비스 준비 완료 대기... (모델 로딩으로 인해 시간이 오래 걸립니다)"
+check_service_health "Indexing API" "${INDEXING_PORT}" 150
 
 echo "🤖 RAG API 서비스 시작..."
 cd rag-api
 docker compose up -d --build
 cd ..
 
+echo "⏳ RAG API 서비스 준비 완료 대기... (모델 로딩으로 인해 시간이 오래 걸립니다)"
+check_service_health "RAG API" "${RAG_API_PORT}" 150
+
 echo "🌐 웹 애플리케이션 시작..."
 cd webapp
 docker compose up -d --build
 cd ..
 
-# STEP 4: Health Checks
-display_header "4. 서비스 상태 확인"
+echo "⏳ 웹 애플리케이션 준비 완료 대기..."
+check_service_health "Web App" "${WEBAPP_PORT}"
 
-wait_with_progress 30 "⏳ 모든 서비스 초기화 대기"
+echo "✅ 모든 애플리케이션 서비스 준비 완료"
 
+# STEP 4: Final Health Check Summary
+display_header "4. 최종 서비스 상태 확인"
+
+echo "🔍 모든 서비스 최종 상태 확인..."
 echo ""
-echo "🔍 각 서비스 상태 확인 중..."
-echo ""
 
-# Check each service (non-blocking)
+# Final check (should all be ready now)
 services_ready=true
 
-echo "📊 Scraper API (포트 ${SCRAPER_PORT})..."
-if curl -s -f "http://localhost:${SCRAPER_PORT}/" > /dev/null 2>&1; then
-    echo "✅ Scraper 서비스 준비 완료"
+echo "📊 Scraper API 최종 확인..."
+if curl -s -f "http://localhost:${SCRAPER_PORT}/health" > /dev/null 2>&1 || curl -s -f "http://localhost:${SCRAPER_PORT}/" > /dev/null 2>&1; then
+    echo "✅ Scraper API 정상 작동"
 else
-    echo "⚠️ Scraper 서비스 확인 필요"
+    echo "❌ Scraper API 문제 발생"
     services_ready=false
 fi
 
-echo "🧠 Indexing API (포트 ${INDEXING_PORT})..."
-if curl -s -f "http://localhost:${INDEXING_PORT}/" > /dev/null 2>&1; then
-    echo "✅ Indexing 서비스 준비 완료"
+echo "🧠 Indexing API 최종 확인..."  
+if curl -s -f "http://localhost:${INDEXING_PORT}/health" > /dev/null 2>&1 || curl -s -f "http://localhost:${INDEXING_PORT}/" > /dev/null 2>&1; then
+    echo "✅ Indexing API 정상 작동"
 else
-    echo "⚠️ Indexing 서비스 확인 필요"
+    echo "❌ Indexing API 문제 발생"
     services_ready=false
 fi
 
-echo "🤖 RAG API (포트 ${RAG_API_PORT})..."
-if curl -s -f "http://localhost:${RAG_API_PORT}/" > /dev/null 2>&1; then
-    echo "✅ RAG API 서비스 준비 완료"
+echo "🤖 RAG API 최종 확인..."
+if curl -s -f "http://localhost:${RAG_API_PORT}/health" > /dev/null 2>&1 || curl -s -f "http://localhost:${RAG_API_PORT}/" > /dev/null 2>&1; then
+    echo "✅ RAG API 정상 작동"
 else
-    echo "⚠️ RAG API 서비스 확인 필요"
+    echo "❌ RAG API 문제 발생"  
     services_ready=false
 fi
 
-echo "🌐 Web App (포트 ${WEBAPP_PORT})..."
+echo "🌐 Web App 최종 확인..."
 if curl -s -f "http://localhost:${WEBAPP_PORT}/" > /dev/null 2>&1; then
-    echo "✅ 웹 애플리케이션 준비 완료"
+    echo "✅ 웹 애플리케이션 정상 작동"
 else
-    echo "⚠️ 웹 애플리케이션 확인 필요"
+    echo "❌ 웹 애플리케이션 문제 발생"
     services_ready=false
 fi
+
+echo ""
 
 # STEP 5: Final Status
 display_header "5. 시작 완료"
+
+# 외부 공인 IP 주소 자동 감지
+EXTERNAL_IP=$(curl -s ifconfig.me 2>/dev/null || curl -s ipinfo.io/ip 2>/dev/null || curl -s icanhazip.com 2>/dev/null || echo "localhost")
+if [ "$EXTERNAL_IP" = "localhost" ]; then
+    echo "⚠️ 공인 IP 주소를 가져올 수 없어 localhost를 사용합니다"
+    EXTERNAL_IP="localhost"
+else
+    echo "🌐 감지된 공인 IP 주소: $EXTERNAL_IP"
+fi
 
 echo ""
 if [ "$services_ready" = true ]; then
     echo "🎉 모든 서비스가 성공적으로 시작되었습니다!"
     echo ""
     echo "💬 **지금 채팅을 시작하세요:**"
-    echo "   👉 http://localhost:${WEBAPP_PORT}"
+    echo "   👉 http://${EXTERNAL_IP}:${WEBAPP_PORT}"
     echo ""
     echo "🔗 **관리자 URL:**"
-    echo "   📊 Scraper Admin:  http://localhost:${SCRAPER_PORT}/docs"
-    echo "   🧠 Indexing API:   http://localhost:${INDEXING_PORT}/docs"
-    echo "   🤖 RAG API:        http://localhost:${RAG_API_PORT}/docs"
+    echo "   📊 Scraper Admin:  http://${EXTERNAL_IP}:${SCRAPER_PORT}/docs"
+    echo "   🧠 Indexing API:   http://${EXTERNAL_IP}:${INDEXING_PORT}/docs"
+    echo "   🤖 RAG API:        http://${EXTERNAL_IP}:${RAG_API_PORT}/docs"
     echo ""
     echo "📚 **데이터베이스:**"
-    echo "   🗄️ PostgreSQL:     localhost:${POSTGRES_PORT}"
-    echo "   📊 Milvus:         localhost:${MILVUS_PORT}"
+    echo "   🗄️ PostgreSQL:     ${EXTERNAL_IP}:${POSTGRES_PORT}"
+    echo "   📊 Milvus:         ${EXTERNAL_IP}:${MILVUS_PORT}"
     echo ""
     echo "✨ **이미지 첨부 기능**도 포함되어 있습니다!"
     echo "📱 모바일에서도 최적화된 인터페이스를 경험하세요."
     echo ""
 else
-    echo "⚠️  일부 서비스가 아직 준비 중입니다."
-    echo "💡 몇 분 후에 다시 시도하거나 docker ps로 상태를 확인하세요."
+    echo "❌ 일부 서비스에 문제가 발생했습니다."
+    echo "💡 로그를 확인하여 문제를 해결하세요: docker logs [컨테이너명]"
     echo ""
-    echo "📝 **기본 접속 URL:**"
-    echo "   💬 채팅:           http://localhost:${WEBAPP_PORT}"
-    echo "   🤖 RAG API:        http://localhost:${RAG_API_PORT}"
+    echo "📝 **접속 URL (문제가 해결되면):**"
+    echo "   💬 채팅:           http://${EXTERNAL_IP}:${WEBAPP_PORT}"
+    echo "   🤖 RAG API:        http://${EXTERNAL_IP}:${RAG_API_PORT}"
     echo ""
 fi
 
