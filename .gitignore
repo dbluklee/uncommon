@@ -1,7 +1,6 @@
 # Database data directories
 PostgreSQLDB/data/
-MilvusDB/data/
-MilvusDB/volumes/
+MilvusDB/milvus_data/
 
 # Docker volumes
 */data/
