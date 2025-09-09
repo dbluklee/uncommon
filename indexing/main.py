@@ -8,7 +8,7 @@ import json
 import logging
 from datetime import datetime
 from typing import List, Dict, Any
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Header
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from langchain_core.documents import Document
@@ -57,12 +57,7 @@ class StatsResponse(BaseModel):
     pending_products: int
     milvus_documents: int
 
-# 인증
-def verify_admin_key(x_api_key: str = Header(None)):
-    admin_key = os.environ['ADMIN_API_KEY']
-    if not x_api_key or x_api_key != admin_key:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return True
+# Admin authentication removed for MVP
 
 def prepare_product_data(product: Product, images: List[ProductImage]) -> Dict[str, Any]:
     """DB 제품 데이터를 청킹에 적합한 형태로 준비"""
@@ -258,12 +253,19 @@ async def root():
         "vector_store": "Milvus"
     }
 
+@app.get("/health")
+async def health_check():
+    """서비스 헬스체크"""
+    return {
+        "status": "healthy",
+        "service": "indexing"
+    }
+
 @app.post("/index/products", response_model=IndexResponse)
 async def index_products(
     request: IndexRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    authorized: bool = Depends(verify_admin_key)
+    db: Session = Depends(get_db)
 ):
     """제품 인덱싱 시작"""
     
@@ -300,8 +302,7 @@ async def index_products(
 
 @app.get("/index/stats", response_model=StatsResponse)
 async def get_indexing_stats(
-    db: Session = Depends(get_db),
-    authorized: bool = Depends(verify_admin_key)
+    db: Session = Depends(get_db)
 ):
     """인덱싱 통계 조회"""
     
@@ -328,8 +329,7 @@ async def get_indexing_stats(
 @app.post("/index/products/{product_id}")
 async def index_single_product(
     product_id: int,
-    db: Session = Depends(get_db),
-    authorized: bool = Depends(verify_admin_key)
+    db: Session = Depends(get_db)
 ):
     """단일 제품 즉시 인덱싱"""
     
@@ -381,8 +381,7 @@ async def index_single_product(
 @app.delete("/index/products/{product_id}")
 async def remove_product_from_index(
     product_id: int,
-    db: Session = Depends(get_db),
-    authorized: bool = Depends(verify_admin_key)
+    db: Session = Depends(get_db)
 ):
     """제품을 인덱스에서 제거 (미구현 - MVP에서는 제외)"""
     return {"message": "기능 미구현 - MVP 단계에서는 제외"}

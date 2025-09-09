@@ -6,18 +6,15 @@ UNCOMMON RAG API Service
 import os
 import logging
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, HTTPException, Depends, status, File, UploadFile, Form
+from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import json
 import asyncio
 import time
-import hashlib
-from datetime import datetime, timedelta
-import jwt
+from datetime import datetime
 
 # 프로젝트 모듈 임포트
 from embedding_generator import EmbeddingGenerator
@@ -52,13 +49,7 @@ embedding_generator = None
 vector_searcher = None
 llm_client = None
 
-# 관리자 인증 설정
-security = HTTPBearer()
-ADMIN_USERNAME = os.environ["ADMIN_USERNAME"]
-ADMIN_PASSWORD_HASH = hashlib.sha256(os.environ["ADMIN_PASSWORD"].encode()).hexdigest()
-JWT_SECRET_KEY = os.environ["JWT_SECRET_KEY"]
-JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_HOURS = 24
+# JWT authentication removed for MVP
 
 # 시스템 프롬프트 (메모리에 저장, 실제로는 DB나 파일에 저장)
 SYSTEM_PROMPT = """다음은 UNCOMMON 안경 제품에 대한 정보를 기반으로 사용자의 질문에 답변하는 AI 어시스턴트입니다.
@@ -133,42 +124,7 @@ class DocumentResponse(BaseModel):
     created_at: datetime
     vector_count: int
 
-# 관리자 인증 유틸리티 함수들
-def create_jwt_token(username: str) -> str:
-    """JWT 토큰 생성"""
-    payload = {
-        "sub": username,
-        "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRE_HOURS),
-        "iat": datetime.utcnow()
-    }
-    return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
-
-def verify_jwt_token(token: str) -> Optional[str]:
-    """JWT 토큰 검증"""
-    try:
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        username = payload.get("sub")
-        if username is None:
-            return None
-        return username
-    except jwt.PyJWTError:
-        return None
-
-def verify_admin_credentials(username: str, password: str) -> bool:
-    """관리자 인증 확인"""
-    password_hash = hashlib.sha256(password.encode()).hexdigest()
-    return username == ADMIN_USERNAME and password_hash == ADMIN_PASSWORD_HASH
-
-async def get_current_admin(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    """현재 관리자 사용자 확인"""
-    username = verify_jwt_token(credentials.credentials)
-    if username is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="유효하지 않은 인증 토큰입니다",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return username
+# JWT authentication functions removed for MVP
 
 @app.on_event("startup")
 async def startup_event():
@@ -581,196 +537,7 @@ async def get_stats():
         logger.error(f"통계 조회 실패: {str(e)}")
         return {"error": str(e)}
 
-# ========== 관리자 API 엔드포인트들 ==========
-
-@app.post("/admin/login", response_model=AdminLoginResponse)
-async def admin_login(request: AdminLoginRequest):
-    """관리자 로그인"""
-    try:
-        logger.info(f"👤 관리자 로그인 시도: {request.username}")
-        
-        if not verify_admin_credentials(request.username, request.password):
-            logger.warning(f"❌ 인증 실패: {request.username}")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="사용자명 또는 비밀번호가 올바르지 않습니다"
-            )
-        
-        # JWT 토큰 생성
-        token = create_jwt_token(request.username)
-        expires_at = datetime.utcnow() + timedelta(hours=JWT_EXPIRE_HOURS)
-        
-        logger.info(f"✅ 관리자 로그인 성공: {request.username}")
-        
-        return AdminLoginResponse(
-            token=token,
-            user=request.username,
-            expires_at=expires_at
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"로그인 처리 오류: {str(e)}")
-        raise HTTPException(status_code=500, detail="서버 내부 오류")
-
-@app.get("/admin/stats")
-async def get_admin_stats():
-    """관리자용 상세 통계 정보"""
-    try:
-        logger.info("📊 관리자 통계 조회")
-        
-        # Milvus 통계
-        vector_stats = await vector_searcher.get_collection_stats()
-        
-        # PostgreSQL 통계 (vector_searcher를 통해 접근)
-        doc_stats = await vector_searcher.get_document_stats()
-        
-        return {
-            "total_documents": doc_stats.get("total_documents", 0),
-            "total_vectors": vector_stats.get("row_count", 0),
-            "indexed_documents": doc_stats.get("indexed_documents", 0),
-            "pending_documents": doc_stats.get("pending_documents", 0),
-            "last_update": doc_stats.get("last_update", "N/A"),
-            "collection_name": os.environ["COLLECTION_NAME"],
-            "embedding_dim": int(os.environ["DIMENSION"]),
-            "system_status": "healthy"
-        }
-        
-    except Exception as e:
-        logger.error(f"관리자 통계 조회 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/admin/prompt", response_model=SystemPromptResponse)
-async def get_system_prompt():
-    """시스템 프롬프트 조회"""
-    try:
-        logger.info("📋 시스템 프롬프트 조회")
-        
-        return SystemPromptResponse(
-            prompt=SYSTEM_PROMPT,
-            updated_at=datetime.utcnow()
-        )
-        
-    except Exception as e:
-        logger.error(f"프롬프트 조회 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/admin/prompt", response_model=SystemPromptResponse)
-async def update_system_prompt(request: SystemPromptRequest):
-    """시스템 프롬프트 업데이트"""
-    global SYSTEM_PROMPT
-    
-    try:
-        logger.info("📝 시스템 프롬프트 업데이트")
-        
-        if not request.prompt.strip():
-            raise HTTPException(status_code=400, detail="프롬프트를 입력해주세요")
-        
-        # 프롬프트에 필요한 placeholder 확인
-        if "{query}" not in request.prompt or "{context}" not in request.prompt:
-            raise HTTPException(
-                status_code=400, 
-                detail="프롬프트에는 {query}와 {context} 플레이스홀더가 포함되어야 합니다"
-            )
-        
-        # 메모리에 저장 (실제로는 DB나 파일에 저장)
-        SYSTEM_PROMPT = request.prompt
-        updated_at = datetime.utcnow()
-        
-        logger.info("✅ 시스템 프롬프트 업데이트 완료")
-        
-        return SystemPromptResponse(
-            prompt=SYSTEM_PROMPT,
-            updated_at=updated_at
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"프롬프트 업데이트 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/admin/documents")
-async def get_admin_documents():
-    """관리자용 문서 목록 조회"""
-    try:
-        logger.info("📚 관리자 문서 목록 조회")
-        
-        # PostgreSQL에서 문서 목록 조회
-        documents = await vector_searcher.get_all_documents()
-        
-        # 문서별 벡터 수 집계
-        for doc in documents:
-            doc["vector_count"] = await vector_searcher.get_document_vector_count(doc["id"])
-        
-        logger.info(f"📊 {len(documents)}개 문서 반환")
-        return documents
-        
-    except Exception as e:
-        logger.error(f"문서 목록 조회 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/admin/documents")
-async def create_admin_document(request: DocumentCreateRequest):
-    """관리자용 문서 추가"""
-    try:
-        logger.info(f"➕ 관리자 문서 추가: {request.title}")
-        
-        if not request.title.strip() or not request.content.strip():
-            raise HTTPException(status_code=400, detail="제목과 내용을 모두 입력해주세요")
-        
-        # 문서를 PostgreSQL에 저장
-        doc_id = await vector_searcher.add_manual_document(
-            title=request.title,
-            content=request.content,
-            category=request.category
-        )
-        
-        # 문서를 자동으로 인덱싱
-        await vector_searcher.index_document(doc_id)
-        
-        logger.info(f"✅ 문서 추가 및 인덱싱 완료: ID={doc_id}")
-        
-        return {
-            "id": doc_id,
-            "title": request.title,
-            "message": "문서가 성공적으로 추가되고 인덱싱되었습니다"
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"문서 추가 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.delete("/admin/documents/{doc_id}")
-async def delete_admin_document(doc_id: int):
-    """관리자용 문서 삭제"""
-    try:
-        logger.info(f"🗑️ 관리자 문서 삭제: ID={doc_id}")
-        
-        # Milvus에서 벡터 삭제
-        await vector_searcher.delete_document_vectors(doc_id)
-        
-        # PostgreSQL에서 문서 삭제
-        success = await vector_searcher.delete_document(doc_id)
-        
-        if not success:
-            raise HTTPException(status_code=404, detail="문서를 찾을 수 없습니다")
-        
-        logger.info(f"✅ 문서 삭제 완료: ID={doc_id}")
-        
-        return {
-            "id": doc_id,
-            "message": "문서가 성공적으로 삭제되었습니다"
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"문서 삭제 실패: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+# Admin endpoints removed for MVP
 
 if __name__ == "__main__":
     import uvicorn

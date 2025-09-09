@@ -3,8 +3,8 @@ services:
     build: 
       context: .
       args:
-        USE_CUDA: ${USE_CUDA:-false}
-        CUDA_VERSION: ${CUDA_VERSION:-cu121}
+        USE_CUDA: ${USE_CUDA}
+        CUDA_VERSION: ${CUDA_VERSION}
     container_name: uncommon_rag-indexing
     env_file:
       - ../.env.global
@@ -16,7 +16,7 @@ services:
       - PYTHONPATH=/app
       - PYTHONDONTWRITEBYTECODE=1
       - DEBIAN_FRONTEND=noninteractive
-      - CUDA_VISIBLE_DEVICES=${USE_CUDA:+${CUDA_VISIBLE_DEVICES:-0}}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}
     volumes:
       - ./models:/app/models
       - ./logs:/app/logs
@@ -30,10 +30,10 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: ${USE_CUDA:+all}  # USE_CUDA=true일 때만
+              count: all
               capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${INDEXING_INTERNAL_PORT}/health"]"
+      test: ["CMD", "curl", "-f", "http://localhost:${INDEXING_INTERNAL_PORT}/health"]
       interval: 30s
       timeout: 10s
       retries: 5

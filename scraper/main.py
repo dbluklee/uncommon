@@ -1,5 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Security
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 import os
 from database import init_db, get_db
@@ -18,10 +17,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-security = HTTPBearer()
-
 # Environment variables
-ADMIN_API_KEY = os.environ["ADMIN_API_KEY"]
 TARGET_URL = os.environ["TARGET_URL"]
 INDEXING_SERVICE_HOST = os.environ["INDEXING_SERVICE_HOST"]
 INDEXING_SERVICE_PORT = os.environ["INDEXING_SERVICE_PORT"]
@@ -37,40 +33,9 @@ class ScrapeResponse(BaseModel):
     message: str
     target_url: str
 
-class JobStatus(BaseModel):
-    job_id: int
-    status: str
-    products_count: int
-    started_at: str
-    completed_at: Optional[str] = None
+# Removed admin-related models for MVP
 
-class ProductInfo(BaseModel):
-    id: int
-    source_url: str
-    product_name: str
-    color: str
-    price: dict  # JSON: {"global": "", "kr": ""}
-    reward_points: dict  # JSON: {"global": "", "kr": ""}
-    description: dict  # JSON: {"global": "", "kr": ""}
-    material: dict  # JSON: {"global": "", "kr": ""}
-    size: dict  # JSON: {"global": "", "kr": ""}
-    scraped_at: str
-    indexed: bool
-    image_count: int
-
-class SystemStats(BaseModel):
-    total_products: int
-    indexed_products: int
-    pending_products: int
-    total_images: int
-    running_jobs: int
-
-# Authentication
-def verify_admin_key(credentials: HTTPAuthorizationCredentials = Security(security)):
-    if credentials.credentials != ADMIN_API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return credentials.credentials
-
+# Application Events
 @app.on_event("startup")
 async def startup_event():
     init_db()
@@ -84,13 +49,12 @@ async def health_check():
         "target_url": TARGET_URL
     }
 
-@app.post("/admin/scrape", response_model=ScrapeResponse)
+@app.post("/scrape", response_model=ScrapeResponse)
 async def start_scraping(
     request: ScrapeRequest,
     db: Session = Depends(get_db),
-    api_key: str = Depends(verify_admin_key)
 ):
-    """관리자용 스크래핑 시작 API"""
+    """제품 스크래핑 시작 API"""
     target_url = request.url or TARGET_URL
     
     # 이미 실행 중인 작업이 있는지 확인
@@ -122,124 +86,7 @@ async def start_scraping(
         target_url=target_url
     )
 
-@app.get("/admin/jobs", response_model=List[JobStatus])
-async def get_scraping_jobs(
-    limit: int = 10,
-    db: Session = Depends(get_db),
-    api_key: str = Depends(verify_admin_key)
-):
-    """스크래핑 작업 목록 조회"""
-    jobs = db.query(ScrapingJob).order_by(
-        ScrapingJob.started_at.desc()
-    ).limit(limit).all()
-    
-    result = []
-    for job in jobs:
-        result.append(JobStatus(
-            job_id=job.id,
-            status=job.status,
-            products_count=job.products_count,
-            started_at=job.started_at.isoformat(),
-            completed_at=job.completed_at.isoformat() if job.completed_at else None
-        ))
-    
-    return result
-
-@app.get("/admin/jobs/{job_id}", response_model=JobStatus)
-async def get_job_status(
-    job_id: int,
-    db: Session = Depends(get_db),
-    api_key: str = Depends(verify_admin_key)
-):
-    """특정 스크래핑 작업 상태 조회"""
-    job = db.query(ScrapingJob).filter(ScrapingJob.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
-    return JobStatus(
-        job_id=job.id,
-        status=job.status,
-        products_count=job.products_count,
-        started_at=job.started_at.isoformat(),
-        completed_at=job.completed_at.isoformat() if job.completed_at else None
-    )
-
-@app.get("/admin/products", response_model=List[ProductInfo])
-async def get_products(
-    limit: int = 20,
-    indexed: Optional[bool] = None,
-    db: Session = Depends(get_db),
-    api_key: str = Depends(verify_admin_key)
-):
-    """제품 목록 조회"""
-    query = db.query(Product)
-    
-    if indexed is not None:
-        query = query.filter(Product.indexed == indexed)
-    
-    products = query.order_by(Product.scraped_at.desc()).limit(limit).all()
-    
-    result = []
-    for product in products:
-        # 이미지 개수 계산
-        image_count = db.query(ProductImage).filter(
-            ProductImage.product_id == product.id
-        ).count()
-        
-        # 새로운 JSON 구조에서 데이터 추출
-        result.append(ProductInfo(
-            id=product.id,
-            source_url=product.source_url,
-            product_name=product.product_name or '',
-            color=product.color or '',
-            price=product.price or {},  # JSON 형태
-            reward_points=product.reward_points or {},  # JSON 형태
-            description=product.description or {},  # JSON 형태
-            material=product.material or {},  # JSON 형태
-            size=product.size or {},  # JSON 형태
-            scraped_at=product.scraped_at.isoformat(),
-            indexed=product.indexed,
-            image_count=image_count
-        ))
-    
-    return result
-
-@app.get("/admin/stats", response_model=SystemStats)
-async def get_system_stats(
-    db: Session = Depends(get_db),
-    api_key: str = Depends(verify_admin_key)
-):
-    """시스템 통계 조회"""
-    total_products = db.query(Product).count()
-    indexed_products = db.query(Product).filter(Product.indexed == True).count()
-    pending_products = total_products - indexed_products
-    total_images = db.query(ProductImage).count()
-    running_jobs = db.query(ScrapingJob).filter(ScrapingJob.status == "running").count()
-    
-    return SystemStats(
-        total_products=total_products,
-        indexed_products=indexed_products,
-        pending_products=pending_products,
-        total_images=total_images,
-        running_jobs=running_jobs
-    )
-
-@app.delete("/admin/products/{product_id}")
-async def delete_product(
-    product_id: int,
-    db: Session = Depends(get_db),
-    api_key: str = Depends(verify_admin_key)
-):
-    """제품 삭제 (이미지 포함)"""
-    product = db.query(Product).filter(Product.id == product_id).first()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
-    
-    # 관련 이미지들은 CASCADE로 자동 삭제됨
-    db.delete(product)
-    db.commit()
-    
-    return {"message": f"Product {product_id} deleted successfully"}
+# Admin endpoints removed for MVP
 
 async def run_scraping(job_id: int, target_url: str, max_products: Optional[int]):
     """백그라운드에서 실행되는 스크래핑 작업"""
