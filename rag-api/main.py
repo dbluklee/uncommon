@@ -1,0 +1,287 @@
+"""
+UNCOMMON RAG API Service
+사용자 질의를 처리하고 관련 제품 정보를 기반으로 답변 생성
+"""
+
+import os
+import logging
+from typing import List, Dict, Any, Optional
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from dotenv import load_dotenv
+import json
+import asyncio
+import time
+
+# 프로젝트 모듈 임포트
+from embedding_generator import EmbeddingGenerator
+from vector_search import VectorSearcher
+from llm_client import LLMClient
+
+# 환경변수 로드
+load_dotenv()
+
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# FastAPI 앱
+app = FastAPI(
+    title="UNCOMMON RAG API Service",
+    description="벡터 검색 기반 제품 정보 질의응답 서비스",
+    version="1.0.0"
+)
+
+# 전역 인스턴스
+embedding_generator = None
+vector_searcher = None
+llm_client = None
+
+# 요청/응답 모델
+class ChatRequest(BaseModel):
+    query: str
+    top_k: Optional[int] = 5
+    stream: Optional[bool] = True
+    temperature: Optional[float] = 0.7
+    include_images: Optional[bool] = False
+
+class ChatResponse(BaseModel):
+    answer: str
+    sources: List[Dict[str, Any]]
+    query_embedding_dim: int
+
+class SearchRequest(BaseModel):
+    query: str
+    top_k: Optional[int] = 5
+
+class SearchResponse(BaseModel):
+    results: List[Dict[str, Any]]
+    query: str
+    total_results: int
+
+@app.on_event("startup")
+async def startup_event():
+    """서비스 시작 시 초기화"""
+    global embedding_generator, vector_searcher, llm_client
+    
+    try:
+        logger.info("🚀 UNCOMMON RAG API 서비스 시작")
+        
+        # 임베딩 생성기 초기화
+        logger.info("📥 임베딩 모델 로딩 중...")
+        embedding_generator = EmbeddingGenerator()
+        logger.info("✅ 임베딩 모델 로딩 완료")
+        
+        # 벡터 검색기 초기화
+        logger.info("🔗 Milvus 벡터 검색기 초기화 중...")
+        vector_searcher = VectorSearcher(embedding_generator)
+        logger.info("✅ Milvus 벡터 검색기 초기화 완료")
+        
+        # LLM 클라이언트 초기화
+        logger.info("🤖 Ollama LLM 클라이언트 초기화 중...")
+        llm_client = LLMClient()
+        logger.info("✅ Ollama LLM 클라이언트 초기화 완료")
+        
+        logger.info("🎉 모든 모듈 초기화 완료!")
+        
+    except Exception as e:
+        logger.error(f"❌ 초기화 실패: {str(e)}")
+        raise
+
+@app.get("/")
+async def root():
+    """서비스 상태 확인"""
+    return {
+        "service": "UNCOMMON RAG API Service",
+        "status": "running",
+        "version": "1.0.0",
+        "embedding_model": os.getenv("EMBEDDING_MODEL", "BGE-M3"),
+        "llm_model": os.getenv("OLLAMA_MODEL", "gemma3"),
+        "vector_store": "Milvus"
+    }
+
+@app.get("/health")
+async def health_check():
+    """헬스체크 엔드포인트"""
+    return {"status": "healthy"}
+
+@app.post("/search", response_model=SearchResponse)
+async def search_products(request: SearchRequest):
+    """
+    제품 벡터 검색 (LLM 없이 검색만)
+    """
+    try:
+        logger.info(f"🔍 검색 요청: {request.query}")
+        
+        # 벡터 검색 수행
+        search_results = await vector_searcher.search(
+            query=request.query,
+            top_k=request.top_k
+        )
+        
+        # 결과 포맷팅
+        formatted_results = []
+        for result in search_results:
+            formatted_results.append({
+                "content": result.get("content", ""),
+                "product_id": result.get("product_id", 0),
+                "product_name": result.get("product_name", ""),
+                "chunk_type": result.get("chunk_type", ""),
+                "source": result.get("source", ""),
+                "score": result.get("score", 0.0)
+            })
+        
+        logger.info(f"✅ {len(formatted_results)}개 결과 반환")
+        
+        return SearchResponse(
+            results=formatted_results,
+            query=request.query,
+            total_results=len(formatted_results)
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ 검색 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/chat")
+async def chat(request: ChatRequest):
+    """
+    RAG 기반 질의응답 (스트리밍 지원)
+    """
+    try:
+        start_time = time.time()
+        logger.info(f"💬 채팅 요청: {request.query}")
+        
+        # 1. 벡터 검색 수행
+        search_start = time.time()
+        search_results = await vector_searcher.search(
+            query=request.query,
+            top_k=request.top_k
+        )
+        search_end = time.time()
+        logger.info(f"⏱️ 벡터 검색 완료: {search_end - search_start:.2f}초")
+        
+        if not search_results:
+            logger.warning("⚠️ 관련 제품을 찾을 수 없습니다")
+            return ChatResponse(
+                answer="죄송합니다. 관련된 제품 정보를 찾을 수 없습니다.",
+                sources=[],
+                query_embedding_dim=1024
+            )
+        
+        # 2. 컨텍스트 구성
+        context_start = time.time()
+        context = _build_context(search_results)
+        context_end = time.time()
+        logger.info(f"⏱️ 컨텍스트 구성 완료: {context_end - context_start:.2f}초")
+        
+        # 3. LLM 응답 생성
+        if request.stream:
+            # 스트리밍 응답
+            logger.info("📡 스트리밍 응답 시작")
+            return StreamingResponse(
+                _stream_response(request.query, context, search_results, request.temperature),
+                media_type="text/event-stream"
+            )
+        else:
+            # 일반 응답
+            llm_start = time.time()
+            logger.info("🤖 LLM 응답 생성 시작...")
+            answer = await llm_client.generate(
+                query=request.query,
+                context=context,
+                temperature=request.temperature
+            )
+            llm_end = time.time()
+            total_end = time.time()
+            
+            logger.info(f"⏱️ LLM 응답 생성 완료: {llm_end - llm_start:.2f}초")
+            logger.info(f"⏱️ 전체 처리 시간: {total_end - start_time:.2f}초")
+            
+            return ChatResponse(
+                answer=answer,
+                sources=_format_sources(search_results),
+                query_embedding_dim=1024
+            )
+            
+    except Exception as e:
+        logger.error(f"❌ 채팅 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+def _build_context(search_results: List[Dict]) -> str:
+    """검색 결과로부터 컨텍스트 구성"""
+    context_parts = []
+    max_length = int(os.getenv("MAX_CONTEXT_LENGTH", 4000))
+    current_length = 0
+    
+    for i, result in enumerate(search_results, 1):
+        content = result.get("content", "")
+        product_name = result.get("product_name", "")
+        chunk_type = result.get("chunk_type", "")
+        
+        # 제품 정보 포함한 컨텍스트 생성
+        context_item = f"[제품정보 {i}]\n"
+        if product_name:
+            context_item += f"제품명: {product_name}\n"
+        if chunk_type:
+            context_item += f"정보 유형: {chunk_type}\n"
+        context_item += f"{content}\n"
+        
+        # 길이 체크
+        if current_length + len(context_item) > max_length:
+            break
+            
+        context_parts.append(context_item)
+        current_length += len(context_item)
+    
+    return "\n".join(context_parts)
+
+def _format_sources(search_results: List[Dict]) -> List[Dict]:
+    """검색 결과를 소스 형식으로 변환"""
+    sources = []
+    for result in search_results:
+        sources.append({
+            "product_name": result.get("product_name", "Unknown"),
+            "product_id": result.get("product_id"),
+            "chunk_type": result.get("chunk_type"),
+            "score": result.get("score", 0.0)
+        })
+    return sources
+
+async def _stream_response(query: str, context: str, search_results: List[Dict], temperature: float):
+    """스트리밍 응답 생성"""
+    try:
+        # 스트리밍 시작 이벤트
+        yield f"data: {json.dumps({'type': 'start', 'sources': _format_sources(search_results)})}\n\n"
+        
+        # LLM 스트리밍 응답
+        async for chunk in llm_client.stream_generate(query, context, temperature):
+            yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
+            await asyncio.sleep(0.01)  # 백프레셔 제어
+        
+        # 스트리밍 종료 이벤트
+        yield f"data: {json.dumps({'type': 'end'})}\n\n"
+        
+    except Exception as e:
+        logger.error(f"스트리밍 오류: {str(e)}")
+        yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+@app.get("/stats")
+async def get_stats():
+    """시스템 통계 정보"""
+    try:
+        stats = await vector_searcher.get_collection_stats()
+        return {
+            "collection_name": os.getenv("COLLECTION_NAME", "uncommon_products"),
+            "total_vectors": stats.get("row_count", 0),
+            "embedding_dim": int(os.getenv("DIMENSION", 1024)),
+            "metric_type": os.getenv("METRIC_TYPE", "COSINE")
+        }
+    except Exception as e:
+        logger.error(f"통계 조회 실패: {str(e)}")
+        return {"error": str(e)}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8003)

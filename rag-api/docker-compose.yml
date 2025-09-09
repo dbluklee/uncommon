@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  rag-api:
+    build: .
+    container_name: uncommon_rag-api
+    environment:
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_INTERNAL_PORT}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - MILVUS_HOST=${MILVUS_HOST}
+      - MILVUS_PORT=${MILVUS_INTERNAL_PORT}
+      - OLLAMA_HOST=${OLLAMA_HOST}
+      - OLLAMA_PORT=${OLLAMA_PORT}
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL}
+    env_file:
+      - .env
+    ports:
+      - "${RAG_API_PORT:-8003}:8003"
+    networks:
+      - rag-network
+    volumes:
+      - ./models:/app/models
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  rag-network:
+    external: true
+    name: ${NETWORK_NAME}
