@@ -3,16 +3,16 @@ version: '3.8'
 services:
   milvus:
     image: milvusdb/milvus:v2.3.3
-    container_name: ${MILVUS_HOST}
+    container_name: uncommon_rag-milvus
     command: ["milvus", "run", "standalone"]
     env_file:
       - ../.env.global
       - .env
     environment:
-      ETCD_USE_EMBED: ${ETCD_USE_EMBED}
-      COMMON_STORAGETYPE: ${COMMON_STORAGETYPE}
+      ETCD_USE_EMBED: true
+      COMMON_STORAGETYPE: local
     volumes:
-      - ${MILVUS_DATA_PATH}:/var/lib/milvus
+      - ./milvus_data:/var/lib/milvus
     ports:
       - "${MILVUS_PORT}:19530"
       - "${MILVUS_METRICS_PORT}:9091"

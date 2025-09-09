@@ -1,0 +1,44 @@
+services:
+  indexing:
+    build: 
+      context: .
+      args:
+        USE_CUDA: ${USE_CUDA:-false}
+        CUDA_VERSION: ${CUDA_VERSION:-cu121}
+    container_name: uncommon_rag-indexing
+    env_file:
+      - ../.env.global
+      - .env
+    ports:
+      - "${INDEXING_PORT}:8002"
+    environment:
+      - PYTHONUNBUFFERED=1   
+      - PYTHONPATH=/app
+      - PYTHONDONTWRITEBYTECODE=1
+      - DEBIAN_FRONTEND=noninteractive
+      - CUDA_VISIBLE_DEVICES=${USE_CUDA:+${CUDA_VISIBLE_DEVICES:-0}}
+    volumes:
+      - ./models:/app/models
+      - ./logs:/app/logs
+    networks:
+      - rag-network
+    restart: unless-stopped
+# PostgreSQL과 Milvus 의존성은 애플리케이션 레벨에서 재시도 로직으로 처리
+    # GPU 사용시에만 GPU 리소스 할당 (CPU 모드에서는 비활성화)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${USE_CUDA:+all}  # USE_CUDA=true일 때만
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+networks:
+  rag-network:
+    external: true
+    name: ${NETWORK_NAME}

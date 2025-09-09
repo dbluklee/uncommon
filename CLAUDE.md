@@ -28,6 +28,7 @@
 uncommon/
 ├── CLAUDE.md            # Claude Code 참조 문서 (이 문서)
 ├── .env.global          # 전역 환경변수
+├── load-env.sh          # 환경변수 로딩 스크립트 ⚠️ 모든 Docker 작업 전 필수 실행
 ├── PostgreSQLDB/        # PostgreSQL 데이터베이스
 │   ├── .env
 │   ├── docker-compose.yml
@@ -193,32 +194,72 @@ CREATE INDEX idx_documents_url ON documents(url);
 ### Web App
 - QR 접속: `http://localhost:3000`
 
-## 🚀 시스템 시작 명령
+## 🚀 시스템 시작 명령 (검증된 방법)
 ```bash
-# 1. 네트워크 생성
-docker network create rag-network
+# 0. 네트워크 생성 (환경변수 로딩 포함)
+source load-env.sh && docker network create $NETWORK_NAME
 
-# 2. 데이터베이스 시작
-cd PostgreSQLDB && docker-compose up -d
-cd ../MilvusDB && docker-compose up -d
+# 1. 데이터베이스 시작 (검증됨 ✅)
+cd PostgreSQLDB && source ../load-env.sh && docker compose up -d
+cd ../MilvusDB && source ../load-env.sh && docker compose up -d
 
-# 3. 서비스 시작
-cd ../scraper && docker-compose up -d
-cd ../indexing && docker-compose up -d
-cd ../rag-api && docker-compose up -d
-cd ../webapp && docker-compose up -d
+# 2. 서비스 시작
+cd ../scraper && source ../load-env.sh && docker compose up -d
+cd ../indexing && source ../load-env.sh && docker compose up -d
+cd ../rag-api && source ../load-env.sh && docker compose up -d
+cd ../webapp && source ../load-env.sh && docker compose up -d
+```
+
+### 🎯 개별 서비스 시작 예시
+```bash
+# Milvus만 시작 (검증됨 ✅)
+cd MilvusDB && source ../load-env.sh && docker compose up -d
+
+# PostgreSQL만 시작  
+cd PostgreSQLDB && source ../load-env.sh && docker compose up -d
+
+# Scraper만 시작
+cd scraper && source ../load-env.sh && docker compose up -d
 ```
 
 ## 📌 개발 시 주의사항
-1. 모든 서비스는 Docker 컨테이너로 실행
-2. 환경변수는 .env.global과 각 서비스별 .env 파일로 관리
-3. BGE-M3 임베딩 모델은 첫 실행 시 자동 다운로드
-4. Ollama는 외부 서버(112.148.37.41:1884)에서 실행 중
-5. 관리자 API는 ADMIN_API_KEY로 인증
+1. **환경변수 필수 로딩**: 모든 Docker 작업이나 테스트 전에 반드시 환경변수를 먼저 로딩해야 함
+
+   ### 🔥 환경변수 로딩 가이드 (성공 검증됨)
+   
+   **루트 디렉토리에서 실행:**
+   ```bash
+   source load-env.sh
+   ```
+   
+   **서브 디렉토리에서 실행:**
+   ```bash
+   # MilvusDB, PostgreSQLDB, scraper, indexing 등에서 실행 시
+   source ../load-env.sh && docker compose up -d
+   ```
+   
+   **검증된 성공 사례:**
+   ```bash
+   # Milvus 컨테이너 시작 (성공 확인됨)
+   cd MilvusDB && source ../load-env.sh && docker compose up -d
+   
+   # PostgreSQL 컨테이너 시작  
+   cd PostgreSQLDB && source ../load-env.sh && docker compose up -d
+   ```
+   
+   **⚠️ 중요**: Claude Code bash에서는 환경변수가 세션 간 지속되지 않으므로 매번 Docker 명령어 실행 전에 load-env.sh를 source해야 함
+
+2. 모든 서비스는 Docker 컨테이너로 실행
+3. 환경변수는 .env.global과 각 서비스별 .env 파일로 관리
+4. BGE-M3 임베딩 모델은 첫 실행 시 자동 다운로드
+5. Ollama는 외부 서버(112.148.37.41:1884)에서 실행 중
+6. 관리자 API는 ADMIN_API_KEY로 인증
+7. **환경변수 예외처리 금지**: Docker Compose 파일에서 환경변수 사용 시 기본값(${VAR:-default}) 사용 금지. 환경변수가 없으면 에러가 발생하도록 하여 설정 오류를 빠르게 파악할 수 있도록 함
+8. **포트 충돌 방지**: 각 서비스별 고유 포트를 .env.global에 정의하여 다른 프로젝트와 충돌 방지
 
 ---
 
-## 📊 현재 개발 진행 상황 (2024-09-08)
+## 📊 현재 개발 진행 상황 (2025-09-09)
 
 ### ✅ 완료된 작업
 1. **프로젝트 기본 구조**
@@ -246,13 +287,22 @@ cd ../webapp && docker-compose up -d
    - scraper.py - 스크래핑 로직 ✅
    - **테스트 완료**: 2개 제품, 20개 이미지 성공적으로 스크래핑 ✅
 
-5. **시스템 관리 스크립트**
+5. **Indexing 서비스 ✅ 완료**
+   - requirements.txt - langchain-huggingface, pymilvus 등 패키지 ✅
+   - embedding_generator.py - BGE-M3 임베딩 모델 (안정화 버전) ✅
+   - text_chunker.py - 제품 데이터 전용 청킹 (기본정보/설명/이미지 분할) ✅
+   - milvus_client.py - 고도화된 Milvus 벡터 스토어 (배치 처리) ✅
+   - main.py - FastAPI 애플리케이션 (관리자 API, 백그라운드 작업) ✅
+   - **핵심 기능**: tmp/ 폴더 참조 코드 분석 후 UNCOMMON 프로젝트 특화 ✅
+
+6. **시스템 관리 스크립트**
    - start.sh - 전체 시스템 시작
    - stop.sh - 전체 시스템 종료
+   - load-env.sh - 환경변수 로딩 스크립트 ✅ (Claude Code bash 호환 검증 완료)
 
 ### 🚧 현재 작업 중
-- **Scraper 서비스 완료 ✅**
-- **다음: Indexing 서비스 개발**
+- **Indexing 서비스 완료 ✅**
+- **다음: Indexing 서비스 테스트 및 RAG API 서비스 개발**
 
 ---
 
@@ -280,20 +330,34 @@ cd ../webapp && docker-compose up -d
   - [x] 20개 이미지 PostgreSQL 저장
   - [x] JSON 구조로 제품 데이터 저장
 
-### 2. Indexing 서비스 구현
-- [ ] **requirements.txt** - BGE-M3, Milvus 등 패키지
-- [ ] **Dockerfile** - Python 환경 설정
-- [ ] **docker-compose.yml** - 서비스 구성
-- [ ] **database.py** - PostgreSQL 연결
-- [ ] **models.py** - 데이터 모델
-- [ ] **processor.py** - BGE-M3 임베딩 처리
-  - [ ] CUDA 사용 설정 (USE_CUDA 환경변수)
-  - [ ] 텍스트 청킹 (CHUNK_SIZE=500)
-  - [ ] 배치 처리 (EMBEDDING_BATCH_SIZE=32)
-- [ ] **milvus_client.py** - Milvus 연결 및 벡터 저장
-- [ ] **main.py** - FastAPI 애플리케이션
-  - [ ] `/process/new-products` - 새 제품 처리 API
-  - [ ] `/index/status` - 인덱싱 상태 API
+### ✅ 2. Indexing 서비스 구현 완료
+- [x] **requirements.txt** - langchain-huggingface, pymilvus 등 패키지
+- [x] **embedding_generator.py** - BGE-M3 임베딩 모델 (CPU/GPU 자동 선택, 에러 핸들링)
+  - [x] CUDA 사용 설정 (USE_CUDA 환경변수)
+  - [x] 로컬/원격 모델 자동 감지
+  - [x] 배치 처리 및 메모리 최적화
+- [x] **text_chunker.py** - 제품 데이터 전용 청킹
+  - [x] 제품 기본 정보 청킹 (이름, 가격, 브랜드 등)
+  - [x] 제품 설명 청킹 (긴 텍스트 단락별 분할)
+  - [x] 이미지 정보 청킹 (alt_text, context 포함)
+- [x] **milvus_client.py** - 고도화된 Milvus 벡터 스토어
+  - [x] langchain 호환 벡터 스토어
+  - [x] 배치 처리로 메모리 효율성 향상 (16개씩 배치)
+  - [x] CUDA 메모리 오류 시 자동 단일 처리 전환
+  - [x] 검색 성능 최적화 (HNSW 인덱스)
+- [x] **main.py** - FastAPI 애플리케이션
+  - [x] `POST /index/products` - 제품 배치 인덱싱 API
+  - [x] `POST /index/products/{id}` - 단일 제품 인덱싱 API
+  - [x] `GET /index/stats` - 인덱싱 통계 API
+  - [x] 관리자 인증 및 백그라운드 작업 처리
+
+### 🔍 2-1. Indexing 서비스 테스트 필요
+- [ ] **Docker 컨테이너 빌드 및 실행 테스트**
+- [ ] **BGE-M3 모델 로딩 테스트 (CPU 모드)**
+- [ ] **Milvus 연결 및 컬렉션 생성 테스트**
+- [ ] **제품 데이터 청킹 테스트**
+- [ ] **임베딩 생성 및 벡터 저장 테스트**
+- [ ] **전체 파이프라인 통합 테스트**
 
 ### 3. RAG API 서비스 구현
 - [ ] **requirements.txt** - BGE-M3, Milvus, requests 등
@@ -358,18 +422,20 @@ cd ../webapp && docker-compose up -d
 ---
 
 ## 🎯 다음 개발 세션 시작점
-**Indexing 서비스 개발 시작**
-1. `indexing/requirements.txt` - BGE-M3, Milvus 패키지
-2. `indexing/Dockerfile` - Python 환경 설정  
-3. `indexing/main.py` - FastAPI 애플리케이션
-4. `indexing/processor.py` - BGE-M3 임베딩 처리
-5. `indexing/milvus_client.py` - Milvus 연결 및 벡터 저장
+**Indexing 서비스 테스트 및 검증**
+1. Milvus DB 컨테이너 시작
+2. Indexing 서비스 컨테이너 빌드 및 실행
+3. 제품 데이터 청킹 및 임베딩 테스트
+4. 전체 파이프라인 동작 확인
 
 **현재 실행 중인 서비스:**
 - PostgreSQL: `localhost:5434` (uncommon_rag-postgres)
 - Scraper API: `localhost:8011` (uncommon_rag-scraper)
 
-**다음 구현 목표:**
-- PostgreSQL에서 제품 데이터 읽기
-- BGE-M3로 텍스트 임베딩 생성
-- Milvus에 벡터 저장
+**다음 테스트 목표:**
+- 스크래핑된 제품 데이터 → 청킹 → 임베딩 → Milvus 저장
+- BGE-M3 모델 CPU 모드 동작 확인
+- 벡터 검색 기능 검증
+
+**완료 후 다음 단계:**
+- RAG API 서비스 구현 시작

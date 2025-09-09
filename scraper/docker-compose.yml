@@ -17,6 +17,7 @@ services:
     networks:
       - uncommon_rag-network
     restart: unless-stopped
+# PostgreSQL 의존성은 애플리케이션 레벨에서 재시도 로직으로 처리
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s

@@ -1,0 +1,33 @@
+# UNCOMMON Indexing Server - 최신 버전 사용 (기존 동작 코드 참조)
+
+# === 웹 프레임워크 ===
+fastapi                             # FastAPI 웹 프레임워크
+uvicorn[standard]                   # ASGI 서버 (uvloop, httptools 포함)
+pydantic                           # 데이터 검증
+
+# === 데이터베이스 ===
+sqlalchemy                         # PostgreSQL ORM
+psycopg2-binary                    # PostgreSQL 드라이버
+python-multipart                   # 파일 업로드 지원
+python-dotenv                      # 환경변수 로딩
+
+# === LangChain 생태계 ===
+langchain                          # LangChain 코어
+langchain-core                     # LangChain 핵심 추상화
+langchain-text-splitters          # 텍스트 분할 도구
+langchain-huggingface             # HuggingFace 통합
+langchain-milvus                  # Milvus 벡터 스토어
+
+# === 벡터 데이터베이스 ===
+pymilvus                          # Milvus Python SDK
+
+# === 임베딩 및 ML ===
+transformers                      # Transformer 모델 (BGE-M3)
+sentence-transformers            # 문장 임베딩
+huggingface_hub                   # HuggingFace Hub 통합
+
+# === HTTP 클라이언트 ===
+requests                          # HTTP 요청
+
+# === 기본 유틸리티 ===
+numpy                            # 수치 계산
