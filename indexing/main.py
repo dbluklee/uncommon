@@ -1,121 +1,137 @@
+# RAG LLM 시스템의 벡터 인덱싱 서비스 메인 파일
+# 목적: 스크래핑된 제품 데이터를 BGE-M3 모델로 벡터화하여 Milvus DB에 저장
+# 관련 함수: process_products_indexing (벡터화), ProductTextChunker.chunk_product_data (청킹)
+# 주요 기능: 텍스트 청킹, BGE-M3 임베딩, Milvus 벡터 저장, 자동 인덱싱
 """
-UNCOMMON 제품 인덱싱 서비스 - 개선된 버전
-BGE-M3 + Milvus를 사용한 제품 데이터 벡터화
+UNCOMMON 제품 인덱싱 서비스 - BGE-M3 임베딩 모델과 Milvus 벡터 데이터베이스를 활용한 제품 데이터 벡터화
+목적: PostgreSQL의 제품 데이터를 검색 가능한 벡터로 변환하여 RAG 시스템의 검색 성능 최적화
 """
 
 import os
 import json
-import logging
+import logging  # 인덱싱 작업 상세 로깅
 from datetime import datetime
 from typing import List, Dict, Any
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
-from langchain_core.documents import Document
-from dotenv import load_dotenv
+from pydantic import BaseModel  # API 요청/응답 모델 정의
+from sqlalchemy.orm import Session  # PostgreSQL ORM 세션
+from langchain_core.documents import Document  # LangChain 문서 형태로 변환
+from dotenv import load_dotenv  # 환경변수 로드
 
-# 프로젝트 모듈 임포트
-from database import get_db, init_db, Product, ProductImage
-from text_chunker import ProductTextChunker, ProductChunk
-from embedding_generator import get_bge_m3_model
-from milvus_client import ProductMilvusVectorStore
+# 프로젝트 핵심 모듈 임포트 - 각각 특화된 벡터화 기능 담당
+from database import get_db, init_db, Product, ProductImage  # DB 연결 및 제품 모델
+from text_chunker import ProductTextChunker, ProductChunk  # 제품 특화 텍스트 청킹
+from embedding_generator import get_bge_m3_model  # BGE-M3 임베딩 모델 로더
+from milvus_client import ProductMilvusVectorStore  # Milvus 벡터 저장소
 
-# 환경변수 로드
-load_dotenv('../.env.global')
-load_dotenv()
+# 환경변수 및 서비스 초기화 설정
+# .env.global에서 Milvus, BGE-M3 모델 관련 설정 로드
+load_dotenv('../.env.global')  # 프로젝트 전역 환경변수
+load_dotenv()  # 로컬 환경변수 (우선순위 높음)
 
-# 로깅 설정
+# 인덱싱 작업 상세 로깅 설정 - 벡터화 과정 추적용
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# FastAPI 앱
+# FastAPI 애플리케이션 초기화 - 벡터 인덱싱 전용 API 서비스
 app = FastAPI(
     title="UNCOMMON Indexing Service",
     description="제품 데이터 벡터화 및 Milvus 인덱싱 서비스",
     version="1.0.0"
 )
 
-# 전역 인스턴스
-embedding_model = None
-vector_store = None
-chunker = None
+# 전역 AI/ML 모델 인스턴스 - 서비스 시작 시 한 번만 로드하여 메모리 효율성 확보
+embedding_model = None  # BGE-M3 임베딩 모델 (BAAI/bge-m3)
+vector_store = None  # Milvus 벡터 스토어 클라이언트
+chunker = None  # 제품 텍스트 청킹 모듈
 
-# 요청/응답 모델
+# API 요청/응답 데이터 모델 - 클라이언트와 서버 간 인덱싱 작업 파라미터 정의
+# IndexRequest: 인덱싱 옵션 설정 (전체/부분, 강제 재인덱싱)
+# IndexResponse: 인덱싱 결과 정보 (성공/실패 건수, 오류 메시지)
+# StatsResponse: 시스템 전체 인덱싱 현황 통계
 class IndexRequest(BaseModel):
-    force_reindex: bool = False
-    product_ids: List[int] = []  # 특정 제품만 인덱싱
+    force_reindex: bool = False  # 기존 인덱싱된 제품도 재처리 여부
+    product_ids: List[int] = []  # 특정 제품 ID만 인덱싱 (빈 리스트면 전체)
 
 class IndexResponse(BaseModel):
-    message: str
-    total_products: int
-    indexed_count: int
-    errors: List[str] = []
+    message: str  # 인덱싱 작업 상태 메시지
+    total_products: int  # 처리 대상 제품 총 개수
+    indexed_count: int  # 성공적으로 인덱싱된 제품 수
+    errors: List[str] = []  # 인덱싱 실패 시 오류 메시지 목록
 
 class StatsResponse(BaseModel):
-    total_products: int
-    indexed_products: int
-    pending_products: int
-    milvus_documents: int
+    total_products: int  # PostgreSQL 전체 제품 수
+    indexed_products: int  # 인덱싱 완료된 제품 수
+    pending_products: int  # 인덱싱 대기 중인 제품 수
+    milvus_documents: int  # Milvus에 저장된 실제 벡터 문서 수
 
 # Admin authentication removed for MVP
 
+# 제품 데이터 전처리 함수 - PostgreSQL 제품 데이터를 벡터화에 최적화된 형태로 변환
+# 목적: DB의 정규화된 데이터를 검색용 텍스트로 통합, 다국어 정보 병합
+# 관련 함수: ProductTextChunker.chunk_product_data (청킹 처리)
+# 입력: Product 모델, ProductImage 리스트
+# 출력: 청킹에 적합한 Dict 형태 제품 정보
 def prepare_product_data(product: Product, images: List[ProductImage]) -> Dict[str, Any]:
-    """DB 제품 데이터를 청킹에 적합한 형태로 준비"""
+    """DB 제품 데이터를 청킹에 적합한 형태로 준비 - JSONB 필드 파싱 및 텍스트 통합"""
     
-    # 제품 기본 정보
+    # 제품 메타데이터 구성 - 검색 시 필터링 및 결과 표시용
     product_data = {
-        'id': product.id,
-        'name': product.product_name,
-        'url': product.source_global_url or product.source_kr_url,
-        'price': str(product.price) if product.price else '',
-        'brand': 'UNCOMMON',
-        'category': 'eyewear'
+        'id': product.id,  # 제품 고유 식별자
+        'name': product.product_name,  # 제품명 (주 검색 대상)
+        'url': product.source_global_url or product.source_kr_url,  # 제품 페이지 링크
+        'price': str(product.price) if product.price else '',  # 가격 정보
+        'brand': 'UNCOMMON',  # 브랜드명 (고정값)
+        'category': 'eyewear'  # 제품 카테고리 (안경)
     }
     
-    # 모든 제품 정보를 문자열로 합치기
+    # 제품의 모든 속성 정보를 검색 가능한 텍스트로 통합
+    # PostgreSQL JSONB 필드들을 파싱하여 자연어 형태로 변환
     description_parts = []
     
-    # color 정보
+    # 색상 정보 추가 - 사용자가 "빨간 안경" 등으로 검색 시 매칭
     if product.color:
         description_parts.append(f"색상: {product.color}")
     
-    # description 정보 (JSON 처리)
+    # 제품 상세 설명 (JSONB) - 영문/한글 버전 모두 포함
     if product.description:
         desc_str = str(product.description)
         if desc_str and desc_str != '{}':
             description_parts.append(f"설명: {desc_str}")
     
-    # material 정보 (JSON 처리)  
+    # 재질/소재 정보 (JSONB) - "아세테이트 안경" 등 재질 기반 검색 지원
     if product.material:
         material_str = str(product.material)
         if material_str and material_str != '{}':
             description_parts.append(f"재질: {material_str}")
     
-    # size 정보 (JSON 처리)
+    # 사이즈 정보 (JSONB) - "큰 안경", "작은 프레임" 등 크기 관련 검색
     if product.size:
         size_str = str(product.size)
         if size_str and size_str != '{}':
             description_parts.append(f"사이즈: {size_str}")
     
-    # reward_points 정보
+    # 리워드 포인트 정보 - 혜택 관련 검색 시 활용
     if product.reward_points:
         points_str = str(product.reward_points)
         if points_str and points_str != '{}':
             description_parts.append(f"리워드 포인트: {points_str}")
     
-    # 설명 통합
+    # 모든 제품 속성을 하나의 검색 가능한 텍스트로 통합
     product_data['description'] = " | ".join(description_parts) if description_parts else ""
     
-    # 이미지 정보
+    # 제품 이미지 메타데이터 구성 - 멀티모달 검색 지원용
+    # 이미지 바이너리는 PostgreSQL에 저장, 메타데이터만 벡터화
     if images:
         product_data['images'] = []
         for idx, img in enumerate(images):
+            # 각 이미지의 검색 가능한 메타데이터 생성
             image_info = {
-                'image_id': img.id,
-                'image_order': img.image_order or idx,
-                'size_bytes': len(img.image_data) if img.image_data else 0,
-                'alt_text': f"제품 이미지 {idx + 1}",
-                'context': f"제품 {product.product_name}의 {idx + 1}번째 이미지"
+                'image_id': img.id,  # 이미지 DB 고유 ID
+                'image_order': img.image_order or idx,  # 이미지 표시 순서
+                'size_bytes': len(img.image_data) if img.image_data else 0,  # 이미지 크기
+                'alt_text': f"제품 이미지 {idx + 1}",  # 대체 텍스트
+                'context': f"제품 {product.product_name}의 {idx + 1}번째 이미지"  # 검색 컨텍스트
             }
             product_data['images'].append(image_info)
     
@@ -385,6 +401,43 @@ async def remove_product_from_index(
 ):
     """제품을 인덱스에서 제거 (미구현 - MVP에서는 제외)"""
     return {"message": "기능 미구현 - MVP 단계에서는 제외"}
+
+@app.post("/process/new-products")
+async def process_new_products(
+    request: dict,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """스크래핑 완료 후 자동 인덱싱 시작 (스크래퍼에서 호출)"""
+    
+    products_count = request.get("products_count", 0)
+    logger.info(f"📬 스크래퍼로부터 알림 받음: {products_count}개 제품 스크래핑 완료")
+    
+    # 인덱싱되지 않은 제품 수 확인
+    pending_count = db.query(Product).filter(Product.indexed == False).count()
+    
+    if pending_count == 0:
+        return {
+            "message": f"스크래핑 알림 수신: {products_count}개 제품, 인덱싱할 제품 없음",
+            "products_scraped": products_count,
+            "products_to_index": 0
+        }
+    
+    # 백그라운드 자동 인덱싱 시작
+    background_tasks.add_task(
+        process_products_indexing,
+        None,  # product_ids = None (모든 미인덱싱 제품)
+        False  # force_reindex = False
+    )
+    
+    logger.info(f"🚀 자동 인덱싱 시작: {pending_count}개 제품 처리 예정")
+    
+    return {
+        "message": f"스크래핑 완료 알림 수신, 자동 인덱싱 시작",
+        "products_scraped": products_count,
+        "products_to_index": pending_count,
+        "status": "indexing_started"
+    }
 
 if __name__ == "__main__":
     import uvicorn

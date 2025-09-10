@@ -13,12 +13,16 @@ else
     exit 1
 fi
 
-# Stop all services in reverse order (applications first, then databases)
+# Stop all services in reverse order (applications first, then Router LLM, then databases)
 echo "🔧 Stopping application services..."
 cd scraper && docker compose down 2>/dev/null || echo "Scraper service not running"
 cd ../indexing && docker compose down 2>/dev/null || echo "Indexing service not running"
 cd ../rag-api && docker compose down 2>/dev/null || echo "RAG API service not running"  
 cd ../webapp && docker compose down 2>/dev/null || echo "Web app service not running"
+
+# Stop Router LLM
+echo "🎯 Stopping Router LLM service..."
+cd ../RouterOllama && docker compose down 2>/dev/null || echo "Router LLM service not running"
 
 # Stop databases
 echo "🗄️ Stopping databases..."

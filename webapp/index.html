@@ -1,3 +1,6 @@
+<!-- RAG LLM 시스템의 메인 웹 인터페이스 - 사용자와 AI의 실시간 대화 화면 -->
+<!-- 목적: 제품 정보 질의응답을 위한 모바일 최적화된 채팅 UI 제공 -->
+<!-- 주요 기능: 실시간 스트리밍 대화, 이미지 업로드, 디버그 모드 -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -11,29 +14,32 @@
             box-sizing: border-box;
         }
         
+        /* 메인 레이아웃 스타일 - 전체 화면 모바일 최적화 배경 */
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);  /* 그라데이션 배경 */
+            height: 100vh;  /* 전체 화면 크기 */
             display: flex;
             align-items: center;
             justify-content: center;
         }
         
+        /* 채팅 컨테이너 - 전체 대화 영역의 메인 컨테이너 */
         .chat-container {
-            width: 90%;
-            max-width: 800px;
-            height: 80vh;
+            width: 90%;  /* 모바일에서 여백 확보 */
+            max-width: 800px;  /* 데스크탁에서 최대 너비 제한 */
+            height: 80vh;  /* 화면 높이의 80% 사용 */
             background: white;
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            border-radius: 20px;  /* 둥근 모서리 */
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);  /* 그림자 효과 */
             display: flex;
-            flex-direction: column;
+            flex-direction: column;  /* 세로 레이아웃 (헤더-콘텐츠-입력) */
             overflow: hidden;
         }
         
+        /* 채팅 헤더 - 상단 제목 및 서비스 정보 표시 영역 */
         .chat-header {
-            background: linear-gradient(135deg, #2c3e50, #3498db);
+            background: linear-gradient(135deg, #2c3e50, #3498db);  /* 다크 블루 그라데이션 */
             color: white;
             padding: 20px;
             text-align: center;
@@ -494,31 +500,35 @@
         const previewImage = document.getElementById('previewImage');
         const imageInfo = document.getElementById('imageInfo');
         
-        // RAG API URL - 직접 연결 (브라우저에서 접근 가능한 주소)
-        const RAG_API_URL = `http://${window.location.hostname}:8013`;
+        // RAG API 서버 연결 설정 - Docker 컨테이너 간 통신
+        // 목적: 웹브라우저에서 RAG API 서비스(8003포트)에 직접 연결
+        const RAG_API_URL = `http://${window.location.hostname}:8003`;
         
-        let isLoading = false;
-        let currentDebugInfo = null;
-        let selectedImage = null;
+        // 전역 상태 변수들 - 채팅 상태 및 UI 엘리먼트 참조 관리
+        let isLoading = false;  // 메시지 전송 중 여부 (중복 요청 방지)
+        let currentDebugInfo = null;  // 디버깅 정보 저장
+        let selectedImage = null;  // 업로드된 이미지 파일
         
-        // 디버깅 패널 토글
+        // 디버깅 패널 토글 함수 - RAG 작동 내역 확인 패널 열기/닫기
+        // 목적: 개발자가 벡터 검색 결과, 프롬프트, LLM 설정 등을 확인할 수 있도록 지원
         function toggleDebugPanel() {
-            debugPanel.classList.toggle('open');
+            debugPanel.classList.toggle('open');  // CSS 클래스 토글로 애니메이션 처리
         }
         
-        // 이미지 선택 처리
+        // 멀티모달 이미진 선택 처리 함수 - 사용자가 업로드한 이미지 검증 및 미리보기
+        // 목적: 제품 이미지 기반 질의를 위한 이미지 파일 유효성 검사 및 UI 업데이트
         function handleImageSelect(event) {
             const file = event.target.files[0];
             if (!file) return;
             
-            // 파일 크기 검증 (10MB)
+            // 파일 크기 제한 검증 (10MB) - 서버 성능 및 네트워크 고려
             if (file.size > 10 * 1024 * 1024) {
                 alert('이미지 크기가 10MB를 초과합니다.');
-                event.target.value = '';
+                event.target.value = '';  // 입력 필드 초기화
                 return;
             }
             
-            // 파일 타입 검증
+            // 지원 이미지 형식 검증 - LLM이 처리 가능한 형식으로 제한
             const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
             if (!allowedTypes.includes(file.type)) {
                 alert('지원되지 않는 이미지 형식입니다.\n(JPEG, PNG, GIF, WebP 지원)');
@@ -526,21 +536,22 @@
                 return;
             }
             
-            selectedImage = file;
+            selectedImage = file;  // 전역 변수에 선택된 이미지 저장
             
-            // 미리보기 표시
-            const reader = new FileReader();
+            // 이미지 미리보기 생성 - 사용자가 업로드한 이미지를 UI에 표시
+            const reader = new FileReader();  // 파일을 Data URL로 읽기 위한 리더
             reader.onload = function(e) {
-                previewImage.src = e.target.result;
-                imageInfo.textContent = `${file.name} (${formatFileSize(file.size)})`;
-                imagePreview.classList.add('active');
+                previewImage.src = e.target.result;  // Base64 인코딩된 이미지 데이터
+                imageInfo.textContent = `${file.name} (${formatFileSize(file.size)})`;  // 파일명과 크기 표시
+                imagePreview.classList.add('active');  // 미리보기 영역 활성화
             };
-            reader.readAsDataURL(file);
+            reader.readAsDataURL(file);  # 이미지를 Base64 URL로 변환
         }
         
-        // 이미지 제거
+        // 이미지 제거 함수 - 업로드된 이미진를 UI와 메모리에서 완전히 제거
+        // 목적: 사용자가 업로드한 이미지를 취소하고 일반 텍스트 모드로 되돌아가기
         function removeImage() {
-            selectedImage = null;
+            selectedImage = null;  // 메모리에서 이미지 참조 제거
             imageInput.value = '';
             imagePreview.classList.remove('active');
             previewImage.src = '';

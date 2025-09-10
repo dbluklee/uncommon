@@ -38,37 +38,43 @@ class ProductScraper:
         self.min_delay = 2  # 최소 2초 대기
         self.max_delay = 5  # 최대 5초 대기
     
+    # 텍스트 정리 유틸리티 함수 - HTML에서 추출한 데이터의 불필요한 문자 제거
+    # 목적: 데이터베이스 저장 전 깨끗한 텍스트로 정규화
     def _clean_text(self, text: str) -> str:
-        """HTML 엔티티를 디코딩하고 텍스트를 정리"""
+        """웹 페이지에서 추출한 텍스트 정리 - HTML 엔티티 디코딩 및 공백 정규화"""
         if not text:
             return ""
         
-        # HTML 엔티티 디코딩
+        # HTML 엔티티 디코딩 (&amp;, &lt;, &gt; 등)
         cleaned = html.unescape(text)
         
-        # 추가 정리 (줄바꿈, 탭, 여러 공백 정리)
+        # 여러 공백, 탭, 줄바꿈을 단일 공백으로 대체 및 앞뒤 공백 제거
         cleaned = re.sub(r'\s+', ' ', cleaned).strip()
         
         return cleaned
         
+    # HTTP 헤더 랜덤화 함수 - 대규모 스크래핑 시 웹사이트 차단 방지
+    # 목적: 다양한 브라우저로 위장하여 자연스러운 스크래핑 환경 조성
     def _update_session_headers(self):
-        """세션 헤더 업데이트 (IP 차단 방지)"""
+        """세션 헤더 업데이트 - 실제 브라우저처럼 위장하여 IP 차단 방지"""
         self.session.headers.update({
-            'User-Agent': random.choice(self.user_agents),
+            'User-Agent': random.choice(self.user_agents),  # 랜덤 브라우저 선택
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Language': 'ko-KR,ko;q=0.8,en-US;q=0.5,en;q=0.3',
+            'Accept-Language': 'ko-KR,ko;q=0.8,en-US;q=0.5,en;q=0.3',  # 한글/영어 언어 설정
             'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
+            'Connection': 'keep-alive',  # 지속적인 연결 유지
             'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Dest': 'document',  # 보안 헤더들 (모던 브라우저 시뮬레이션)
             'Sec-Fetch-Mode': 'navigate',
             'Sec-Fetch-Site': 'same-origin',
             'Cache-Control': 'max-age=0'
         })
     
+    # 요청 간격 제어 함수 - 서버 과부하 방지 및 자연스러운 스크래핑 패턴 조성
+    # 목적: 인간이 웹사이트를 보는 것처럼 자연스러운 대기 시간 설정
     def _safe_delay(self):
-        """안전한 요청 간격 대기"""
-        delay = random.uniform(self.min_delay, self.max_delay)
+        """안전한 요청 간격 대기 - 2-5초 사이 랜덤 지연으로 자연스러운 패턴 조성"""
+        delay = random.uniform(self.min_delay, self.max_delay)  # 2-5초 랜덤 지연
         time.sleep(delay)
     
     async def scrape_products_both_sites(self, max_products: int = None) -> int:

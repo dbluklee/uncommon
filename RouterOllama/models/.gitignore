@@ -1,0 +1,5 @@
+# Ignore all files in models directory (Ollama model data)
+*
+
+# But keep this .gitignore file itself
+!.gitignore

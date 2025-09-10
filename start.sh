@@ -1,50 +1,57 @@
 #!/bin/bash
 
-# UNCOMMON RAG LLM System - Complete Startup Script
-# 한 번의 실행으로 모든 서비스를 준비하고 채팅 가능한 상태로 만듭니다
+# RAG LLM 시스템 통합 시작 스크립트 - 전체 마이크로서비스 생명주기 관리
+# 목적: PostgreSQL, Milvus, Scraper, Indexing, RAG API, WebApp 순차 시작 및 상태 확인
+# 주요 기능: 네트워크 생성, 의존성 순서 제어, 헬스체크, 자동 IP 감지
+# 한 번의 명령으로 모든 서비스를 완전히 작동 가능한 상태로 구성
 
-set -e  # 오류 발생 시 스크립트 중단
+set -e  # Bash 엄격 모드 - 어떤 명령이라도 실패하면 스크립트 전체 중단
 
 echo "🚀 UNCOMMON RAG LLM 시스템 시작..."
 echo "=================================================="
 echo ""
 
-# Function: Display header
+# 스크립트 UI 헬퍼 함수 - 실행 진행 상황을 명확하게 시각적 구분
+# 목적: 각 실행 단계를 사용자에게 명확하게 알리는 일관성 있는 UI 제공
 display_header() {
     echo ""
     echo "📋 $1"
-    echo "=================================================="
+    echo "=================================================="  # 50자 등호 선
 }
 
-# Function: Wait with progress indicator
+# 진행 상황 표시 함수 - 사용자에게 대기 시간 시각적 피드백 제공
+# 목적: 긴 대기 시간 동안 사용자가 진행 상황을 시각적으로 확인할 수 있도록 도트 애니메이션
 wait_with_progress() {
-    local seconds=$1
-    local message=$2
+    local seconds=$1  # 대기 시간(초)
+    local message=$2  # 표시할 메시지
     echo -n "$message"
     for i in $(seq 1 $seconds); do
-        echo -n "."
+        echo -n "."  # 매초마다 도트 추가
         sleep 1
     done
-    echo " ✅"
+    echo " ✅"  # 완료 표시
 }
 
-# Function: Check service health
+# 서비스 준비도 검사 함수 - HTTP 엔드포인트를 통한 서비스 상태 확인
+# 목적: Docker 컨테이너 시작과 실제 서비스 준비 완료를 구분하여 안정적인 시스템 구동 보장
+# 방식: /health 또는 / 엔드포인트에 HTTP 요청을 주기적으로 전송하여 응답 확인
 check_service_health() {
-    local service_name=$1
-    local port=$2
-    local max_attempts=${3:-30}
+    local service_name=$1  # 서비스 이름 (표시용)
+    local port=$2  # HTTP 포트 번호
+    local max_attempts=${3:-30}  # 최대 시도 횟수 (기본 30회)
     
     echo "🔍 $service_name 상태 확인 중..."
     for i in $(seq 1 $max_attempts); do
+        # /health 또는 / 엔드포인트에 HTTP 요청 전송 (-s: silent, -f: fail on error)
         if curl -s -f "http://localhost:$port/health" > /dev/null 2>&1 || curl -s -f "http://localhost:$port/" > /dev/null 2>&1; then
-            echo "✅ $service_name 준비 완료"
-            return 0
+            echo "✅ $service_name 준비 완료"  # 정상 응답 수신
+            return 0  # 성공 반환
         fi
         echo "⏳ $service_name 시작 대기 중... ($i/$max_attempts)"
-        sleep 2
+        sleep 2  # 2초 대기 후 재시도
     done
-    echo "❌ $service_name 시작 실패"
-    return 1
+    echo "❌ $service_name 시작 실패"  # 최대 시도 횟수 초과
+    return 1  # 실패 반환
 }
 
 # Function: Check database connection
@@ -114,8 +121,21 @@ check_database "Milvus" "${MILVUS_HOST}"
 
 echo "✅ 모든 데이터베이스 준비 완료"
 
-# STEP 3: Application Services (의존성 순서로 순차 실행)
-display_header "3. 애플리케이션 서비스 시작"
+# STEP 3: Router LLM Service (먼저 시작)
+display_header "3. Router LLM 서비스 시작"
+
+echo "🎯 Router LLM (Ollama) 시작..."
+cd RouterOllama
+docker compose up -d --build
+cd ..
+
+echo "⏳ Router LLM 준비 완료 대기..."
+check_service_health "Router LLM" "${ROUTER_OLLAMA_PORT}"
+
+echo "✅ Router LLM 준비 완료"
+
+# STEP 4: Application Services (의존성 순서로 순차 실행)
+display_header "4. 애플리케이션 서비스 시작"
 
 echo "🔍 Scraper 서비스 시작..."
 cd scraper
@@ -151,14 +171,22 @@ check_service_health "Web App" "${WEBAPP_PORT}"
 
 echo "✅ 모든 애플리케이션 서비스 준비 완료"
 
-# STEP 4: Final Health Check Summary
-display_header "4. 최종 서비스 상태 확인"
+# STEP 5: Final Health Check Summary
+display_header "5. 최종 서비스 상태 확인"
 
 echo "🔍 모든 서비스 최종 상태 확인..."
 echo ""
 
 # Final check (should all be ready now)
 services_ready=true
+
+echo "🎯 Router LLM 최종 확인..."
+if curl -s -f "http://localhost:${ROUTER_OLLAMA_PORT}/api/tags" > /dev/null 2>&1; then
+    echo "✅ Router LLM 정상 작동"
+else
+    echo "❌ Router LLM 문제 발생"
+    services_ready=false
+fi
 
 echo "📊 Scraper API 최종 확인..."
 if curl -s -f "http://localhost:${SCRAPER_PORT}/health" > /dev/null 2>&1 || curl -s -f "http://localhost:${SCRAPER_PORT}/" > /dev/null 2>&1; then
@@ -194,8 +222,8 @@ fi
 
 echo ""
 
-# STEP 5: Final Status
-display_header "5. 시작 완료"
+# STEP 6: Final Status
+display_header "6. 시작 완료"
 
 # 외부 공인 IP 주소 자동 감지
 EXTERNAL_IP=$(curl -s ifconfig.me 2>/dev/null || curl -s ipinfo.io/ip 2>/dev/null || curl -s icanhazip.com 2>/dev/null || echo "localhost")
@@ -214,9 +242,7 @@ if [ "$services_ready" = true ]; then
     echo "   👉 http://${EXTERNAL_IP}:${WEBAPP_PORT}"
     echo ""
     echo "🔗 **관리자 URL:**"
-    echo "   📊 Scraper Admin:  http://${EXTERNAL_IP}:${SCRAPER_PORT}/docs"
-    echo "   🧠 Indexing API:   http://${EXTERNAL_IP}:${INDEXING_PORT}/docs"
-    echo "   🤖 RAG API:        http://${EXTERNAL_IP}:${RAG_API_PORT}/docs"
+    echo "   📊 Admin:  http://192.168.50.40:${WEBAPP_PORT}/admin.html"
     echo ""
     echo "📚 **데이터베이스:**"
     echo "   🗄️ PostgreSQL:     ${EXTERNAL_IP}:${POSTGRES_PORT}"
@@ -224,6 +250,11 @@ if [ "$services_ready" = true ]; then
     echo ""
     echo "✨ **이미지 첨부 기능**도 포함되어 있습니다!"
     echo "📱 모바일에서도 최적화된 인터페이스를 경험하세요."
+    echo ""
+    echo "🕷️ **스크래핑 시작 명령어:**"
+    echo "   curl -X POST \"http://localhost:${SCRAPER_PORT}/scrape\" \\"
+    echo "     -H \"Content-Type: application/json\" \\"
+    echo "     -d '{\"target_url\": \"https://ucmeyewear.earth/category/all/87/\", \"force_rescrape\": false}'"
     echo ""
 else
     echo "❌ 일부 서비스에 문제가 발생했습니다."

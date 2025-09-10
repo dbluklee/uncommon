@@ -100,9 +100,10 @@ class VectorSearcher:
             embed_end = time.time()
             logger.info(f"⏱️ 임베딩 생성 시간: {embed_end - embed_start:.3f}초")
             
-            # 검색 파라미터
+            # 검색 파라미터 (환경변수의 METRIC_TYPE 사용)
+            metric_type = os.environ.get("METRIC_TYPE", "COSINE")
             search_params = {
-                "metric_type": "IP",  # Inner Product (코사인 유사도와 유사)
+                "metric_type": metric_type,
                 "params": {"nprobe": 10}
             }
             

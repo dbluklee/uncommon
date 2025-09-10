@@ -1,0 +1,6 @@
+# Ignore model data in models directory
+models/*
+
+# But keep the models directory structure and .gitignore
+!models/
+!models/.gitignore
